@@ -1,0 +1,1 @@
+This code adds communicating channels between one master core and multiple slave cores，So we modified some configurations at generators/chipyard/src/main/scala/config/RocketConfigs.scala, We modified the number of cores at class RocketConfig. There are 1 master core and 4 slave cores, so the number of cores is 5.  
