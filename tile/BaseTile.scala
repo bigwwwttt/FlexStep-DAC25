@@ -13,6 +13,7 @@ import freechips.rocketchip.rocket._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util._
 import freechips.rocketchip.prci.{ClockSinkParameters}
+import freechips.rocketchip.tile.GlobalParams
 
 case object TileVisibilityNodeKey extends Field[TLEphemeralNode]
 case object TileKey extends Field[TileParams]
@@ -224,6 +225,7 @@ abstract class BaseTile private (val crossing: ClockCrossingType, q: Parameters)
   protected val tlSlaveXbar = LazyModule(new TLXbar)
   protected val intXbar = LazyModule(new IntXbar)
   
+  /*
   //costom node
   val costomout_node = tileParams.hartId match{
     case 0 => Some(BundleBridgeSource[UInt](Some(() => UInt(32.W))))
@@ -233,90 +235,87 @@ abstract class BaseTile private (val crossing: ClockCrossingType, q: Parameters)
     case 1 => Some(BundleBridgeSink[UInt](Some(() => UInt(32.W))))
     case _ => None
   } 
+  */
+  
+  //Master FIFO Node
+  GlobalParams.Master_core = 1
+  GlobalParams.List_Slaveid = GlobalParams.List_hartid.filter(_ != GlobalParams.Master_core)
+  val costomMasterBits_Nodes = if(tileParams.hartId == GlobalParams.Master_core)
+      List.fill(GlobalParams.Num_Slavecores)(Some(BundleBridgeSource[UInt](Some(() => UInt(GlobalParams.Data_width.W)))))
+    else
+      List.empty
+  
+  val costomMasterValid_Nodes = if(tileParams.hartId == GlobalParams.Master_core)
+      List.fill(GlobalParams.Num_Slavecores)(Some(BundleBridgeSource[Bool](Some(() => Bool()))))
+    else
+      List.empty
+ 
+  val costomMasterReady_Nodes = if(tileParams.hartId == GlobalParams.Master_core)
+      List.fill(GlobalParams.Num_Slavecores)(Some(BundleBridgeSink[Bool](Some(() => Bool()))))
+    else
+      List.empty
+
+  //Slave FIFO Nodes
+  val costomSlaveValid_Nodes: Seq[Option[BundleBridgeSink[Bool]]] = (0 until GlobalParams.Num_Slavecores).map { i =>
+     if (tileParams.hartId == GlobalParams.List_Slaveid(i))
+        Some(BundleBridgeSink[Bool](Some(() => Bool())))
+     else
+        None
+  }
+
+  val costomSlaveBits_Nodes: Seq[Option[BundleBridgeSink[UInt]]] = (0 until GlobalParams.Num_Slavecores).map { i =>
+     if (tileParams.hartId == GlobalParams.List_Slaveid(i))
+        Some(BundleBridgeSink[UInt](Some(() => UInt(GlobalParams.Data_width.W))))
+     else
+        None
+  }
+
+  val costomSlaveReady_Nodes: Seq[Option[BundleBridgeSource[Bool]]] = (0 until GlobalParams.Num_Slavecores).map { i =>
+     if (tileParams.hartId == GlobalParams.List_Slaveid(i))
+        Some(BundleBridgeSource[Bool](Some(() => Bool())))
+     else
+        None
+  }
+  
+
+  /*
   //master fifo node
   val costomMasterBits_Nodes: List[Option[BundleBridgeSource[UInt]]] = tileParams.hartId match {
-  case 0 => List(
-    Some(BundleBridgeSource[UInt](Some(() => UInt(32.W)))),
-    Some(BundleBridgeSource[UInt](Some(() => UInt(32.W)))),
-    Some(BundleBridgeSource[UInt](Some(() => UInt(32.W)))),
-    Some(BundleBridgeSource[UInt](Some(() => UInt(32.W))))
+  case GlobalParams.Master_core => List.fill(GlobalParams.Num_Slavecores)(
+    Some(BundleBridgeSource[UInt](Some(() => UInt(GlobalParams.Data_width.W))))
   )
   case _ => List.empty
   } 
 
   val costomMasterValid_Nodes: List[Option[BundleBridgeSource[Bool]]] = tileParams.hartId match {
-  case 0 => List(
-    Some(BundleBridgeSource[Bool](Some(() => Bool()))),
-    Some(BundleBridgeSource[Bool](Some(() => Bool()))),
-    Some(BundleBridgeSource[Bool](Some(() => Bool()))),
+  case GlobalParams.Master_core => List.fill(GlobalParams.Num_Slavecores)(
     Some(BundleBridgeSource[Bool](Some(() => Bool())))
-  )
+    )
   case _ => List.empty
   } 
 
   val costomMasterReady_Nodes: List[Option[BundleBridgeSink[Bool]]] = tileParams.hartId match {
-  case 0 => List(
-    Some(BundleBridgeSink[Bool](Some(() => Bool()))),
-    Some(BundleBridgeSink[Bool](Some(() => Bool()))),
-    Some(BundleBridgeSink[Bool](Some(() => Bool()))),
+  case GlobalParams.Master_core => List.fill(GlobalParams.Num_Slavecores)(
     Some(BundleBridgeSink[Bool](Some(() => Bool())))
   )
   case _ => List.empty
   } 
   //slave fifo node
-  val costomSlaveValid_Nodes: List[Option[BundleBridgeSink[Bool]]] = List(tileParams.hartId match {
-  case 1 => Some(BundleBridgeSink[Bool](Some(() => Bool())))
-  case _ => None
-  }, 
-  tileParams.hartId match {
-  case 2 => Some(BundleBridgeSink[Bool](Some(() => Bool())))
-  case _ => None
-  }, 
-  tileParams.hartId match {
-  case 3 => Some(BundleBridgeSink[Bool](Some(() => Bool())))
-  case _ => None
-  }, 
-  tileParams.hartId match {
-  case 4 => Some(BundleBridgeSink[Bool](Some(() => Bool())))
-  case _ => None
-  }, 
-  )
+  val costomSlaveValid_Nodes: List[Option[BundleBridgeSink[Bool]]] = tileParams.hartId match {
+  case GlobalParams.Master_core => List.empty
+  case _ => List.fill(1)(Some(BundleBridgeSink[Bool](Some(() => Bool()))))
+  }
 
-  val costomSlaveBits_Nodes: List[Option[BundleBridgeSink[UInt]]] = List(tileParams.hartId match {
-  case 1 => Some(BundleBridgeSink[UInt](Some(() => UInt(32.W))))
-  case _ => None
-  },
-  tileParams.hartId match {
-  case 2 => Some(BundleBridgeSink[UInt](Some(() => UInt(32.W))))
-  case _ => None
-  },
-  tileParams.hartId match {
-  case 3 => Some(BundleBridgeSink[UInt](Some(() => UInt(32.W))))
-  case _ => None
-  },
-  tileParams.hartId match {
-  case 4 => Some(BundleBridgeSink[UInt](Some(() => UInt(32.W))))
-  case _ => None
-  },
-  )
+  val costomSlaveBits_Nodes: List[Option[BundleBridgeSink[UInt]]] = tileParams.hartId match {
+  case GlobalParams.Master_core => List.empty
+  case _ => List.fill(1)(Some(BundleBridgeSink[UInt](Some(() => UInt(GlobalParams.Data_width.W)))))
+  }
 
-  val costomSlaveReady_Nodes: List[Option[BundleBridgeSource[Bool]]] = List(tileParams.hartId match {
-  case 1 => Some(BundleBridgeSource[Bool](Some(() => Bool())))
-  case _ => None
-  },
-  tileParams.hartId match {
-  case 2 => Some(BundleBridgeSource[Bool](Some(() => Bool())))
-  case _ => None
-  },
-  tileParams.hartId match {
-  case 3 => Some(BundleBridgeSource[Bool](Some(() => Bool())))
-  case _ => None
-  },
-  tileParams.hartId match {
-  case 4 => Some(BundleBridgeSource[Bool](Some(() => Bool())))
-  case _ => None
-  },
-  )
+  val costomSlaveReady_Nodes: List[Option[BundleBridgeSource[Bool]]] = tileParams.hartId match {
+  case GlobalParams.Master_core => List.empty
+  case _ => List.fill(1)(Some(BundleBridgeSource[Bool](Some(() => Bool()))))
+  }
+  */
   /*
   //master fifo node
   val costomMaster1Ready_node = tileParams.hartId match{
