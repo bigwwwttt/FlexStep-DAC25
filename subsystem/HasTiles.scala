@@ -12,6 +12,7 @@ import freechips.rocketchip.tile._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.prci.{ClockGroup, ResetCrossingType, ClockGroupNode}
 import freechips.rocketchip.util._
+import freechips.rocketchip.tile.GlobalParams
 
 /** Entry point for Config-uring the presence of Tiles */
 case class TilesLocated(loc: HierarchicalLocation) extends Field[Seq[CanAttachTile]](Nil)
@@ -231,16 +232,10 @@ trait DefaultTileContextType
 { this: BaseSubsystem =>
   val debugNode: IntSyncOutwardNode
   //costom node
-  val costomReady_Nodes = List(BundleBridgeEphemeralNode[Bool](), BundleBridgeEphemeralNode[Bool](), BundleBridgeEphemeralNode[Bool](), BundleBridgeEphemeralNode[Bool]())
-  val costomValid_Nodes = List(BundleBridgeEphemeralNode[Bool](), BundleBridgeEphemeralNode[Bool](), BundleBridgeEphemeralNode[Bool](), BundleBridgeEphemeralNode[Bool]())
-  val costomBits_Nodes = List(BundleBridgeEphemeralNode[UInt](), BundleBridgeEphemeralNode[UInt](), BundleBridgeEphemeralNode[UInt](), BundleBridgeEphemeralNode[UInt]())
-  val costomInterNode = BundleBridgeEphemeralNode[UInt]()
-  val costomReady1_Node = BundleBridgeEphemeralNode[Bool]()
-  val costomBits1_Node = BundleBridgeEphemeralNode[UInt]()
-  val costomValid1_Node = BundleBridgeEphemeralNode[Bool]()
-  val costomReady2_Node = BundleBridgeEphemeralNode[Bool]()
-  val costomBits2_Node = BundleBridgeEphemeralNode[UInt]()
-  val costomValid2_Node = BundleBridgeEphemeralNode[Bool]()
+  val costomReady_Nodes = List.fill(GlobalParams.Num_Slavecores)(BundleBridgeEphemeralNode[Bool]())
+  val costomValid_Nodes = List.fill(GlobalParams.Num_Slavecores)(BundleBridgeEphemeralNode[Bool]())
+  val costomBits_Nodes = List.fill(GlobalParams.Num_Slavecores)(BundleBridgeEphemeralNode[UInt]())
+  //val costomInterNode = BundleBridgeEphemeralNode[UInt]()
   //node end
 } // TODO: ideally this bound would be softened to LazyModule
 
@@ -281,15 +276,28 @@ trait CanAttachTile {
   //costom connect
   def costomConnect(domain: TilePRCIDomain[TileType], context: TileContextType): Unit = {
     implicit val p = context.p
-    if(domain.tile.tileParams.hartId == 0){
-      context.costomInterNode := domain.tile.costomout_node.get
+    GlobalParams.Master_core = 1
+    GlobalParams.List_Slaveid = GlobalParams.List_hartid.filter(_ != GlobalParams.Master_core)
+    if(domain.tile.tileParams.hartId == GlobalParams.Master_core){
+      //context.costomInterNode := domain.tile.costomout_node.get
 
-      for(i <- 0 until 4){
+      for(i <- 0 until GlobalParams.Num_Slavecores){
         context.costomBits_Nodes(i) := domain.tile.costomMasterBits_Nodes(i).get
         context.costomValid_Nodes(i) := domain.tile.costomMasterValid_Nodes(i).get
         domain.tile.costomMasterReady_Nodes(i).get := context.costomReady_Nodes(i)
       }
     }
+    else{
+      //domain.tile.costomin_node.get := context.costomInterNode
+      for(i <- 0 until GlobalParams.Num_Slavecores){
+        if(domain.tile.tileParams.hartId == GlobalParams.List_Slaveid(i)){
+          domain.tile.costomSlaveBits_Nodes(i).get := context.costomBits_Nodes(i)
+          domain.tile.costomSlaveValid_Nodes(i).get := context.costomValid_Nodes(i)
+          context.costomReady_Nodes(i) := domain.tile.costomSlaveReady_Nodes(i).get
+        }
+      }
+    }
+    /*
     else if(domain.tile.tileParams.hartId == 1){
       domain.tile.costomin_node.get := context.costomInterNode
 
@@ -312,6 +320,7 @@ trait CanAttachTile {
       domain.tile.costomSlaveValid_Nodes(3).get := context.costomValid_Nodes(3)
       context.costomReady_Nodes(3) := domain.tile.costomSlaveReady_Nodes(3).get
     }
+    */
     
     
   }
