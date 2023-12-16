@@ -125,13 +125,14 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   def nTotalRoCCCSRs = tile.roccCSRs.flatten.size
 
   //costom start
-  val FIFO = Module(new SyncFIFO(UInt(32.W), 32))
-  val costom_reg = RegInit(44.U(32.W))
+  GlobalParams.Master_core = 1
+  val FIFO = Module(new SyncFIFO(GlobalParams.Data_type, GlobalParams.depth))
+  val costom_reg = RegInit(44.U(GlobalParams.Data_width.W))
   val costom_regbool = RegInit(true.B)
   val costom_regbool1 = RegInit(false.B)
-  val reg_sels = RegInit(VecInit(Seq(true.B, true.B, false.B, false.B)))
-  when(io.hartid === 0.U){
-    val mux = Module(new otmMux(4))
+  val reg_sels = RegInit(VecInit(Seq(true.B, true.B, false.B, false.B, true.B, false.B, false.B)))
+  when(io.hartid === GlobalParams.Master_core.U){
+    val mux = Module(new otmMux(GlobalParams.Num_Slavecores))
     FIFO.io.in.bits := costom_reg
     FIFO.io.in.valid := costom_regbool
     FIFO.io.out <> mux.io.in
