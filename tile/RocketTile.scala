@@ -14,6 +14,8 @@ import freechips.rocketchip.subsystem.TileCrossingParamsLike
 import freechips.rocketchip.util._
 import freechips.rocketchip.prci.{ClockSinkParameters}
 
+
+
 case class RocketTileBoundaryBufferParams(force: Boolean = false)
 
 case class RocketTileParams(
@@ -116,6 +118,7 @@ class RocketTile private(
     case (Some(RocketTileBoundaryBufferParams(false)), _: RationalCrossing) => TLBuffer(BufferParams.flow, BufferParams.none, BufferParams.none, BufferParams.none, BufferParams.none)
     case _ => TLBuffer(BufferParams.none)
   }
+
 }
 
 class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
@@ -125,19 +128,34 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
   Annotated.params(this, outer.rocketParams)
 
   val core = Module(new Rocket(outer)(outer.p))
+  GlobalParams.Master_core = 1
+  GlobalParams.List_Slaveid = GlobalParams.List_hartid.filter(_ != GlobalParams.Master_core)
   
   //costom start
-  if(outer.tileParams.hartId == 0){
-      outer.costomout_node.get.bundle := core.io.costomout
+  if(outer.tileParams.hartId == GlobalParams.Master_core){
+      //outer.costomout_node.get.bundle := core.io.costomout
 
-      for(i <- 0 until 4){
+      for(i <- 0 until GlobalParams.Num_Slavecores){
         outer.costomMasterBits_Nodes(i).get.bundle := core.io.costom_FIFOout(i).bits
         outer.costomMasterValid_Nodes(i).get.bundle := core.io.costom_FIFOout(i).valid
         core.io.costom_FIFOout(i).ready := outer.costomMasterReady_Nodes(i).get.bundle
       }
     }
+    else{
+      for(i <- 0 until GlobalParams.Num_Slavecores){
+        if(outer.tileParams.hartId == GlobalParams.List_Slaveid(i)){
+          core.io.costom_FIFOin.bits := outer.costomSlaveBits_Nodes(i).get.bundle
+          core.io.costom_FIFOin.valid := outer.costomSlaveValid_Nodes(i).get.bundle
+          outer.costomSlaveReady_Nodes(i).get.bundle := core.io.costom_FIFOin.ready
+        }
+      }
+        
+    }
+        
+    
+    /*
     else if(outer.tileParams.hartId == 1){
-        core.io.costomin := outer.costomin_node.get.bundle
+        //core.io.costomin := outer.costomin_node.get.bundle
 
         core.io.costom_FIFOin.bits := outer.costomSlaveBits_Nodes(0).get.bundle
         core.io.costom_FIFOin.valid := outer.costomSlaveValid_Nodes(0).get.bundle
@@ -159,6 +177,7 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
         core.io.costom_FIFOin.valid := outer.costomSlaveValid_Nodes(3).get.bundle
         outer.costomSlaveReady_Nodes(3).get.bundle := core.io.costom_FIFOin.ready
     }
+    */
 
     
   
