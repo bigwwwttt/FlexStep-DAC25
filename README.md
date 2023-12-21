@@ -9,3 +9,4 @@ This code adds communicating channels between one master core and multiple slave
        val Data_type = UInt(Data_width.W)
        val depth = 32
      }
+When the number of slave cores changes, the number of sels signals also needs to change. The sels singals are controlled by reg_sels at class Roctet(generators/rocket-chip/src/main/scala/rocket/RocketCore.scala)
