@@ -128,8 +128,6 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
   Annotated.params(this, outer.rocketParams)
 
   val core = Module(new Rocket(outer)(outer.p))
-  GlobalParams.Master_core = 1
-  GlobalParams.List_Slaveid = GlobalParams.List_hartid.filter(_ != GlobalParams.Master_core)
   
   //costom start
   for(i <- 0 until GlobalParams.Num_Mastercores){
