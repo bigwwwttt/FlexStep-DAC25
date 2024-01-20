@@ -132,52 +132,27 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
   GlobalParams.List_Slaveid = GlobalParams.List_hartid.filter(_ != GlobalParams.Master_core)
   
   //costom start
-  if(outer.tileParams.hartId == GlobalParams.Master_core){
-      //outer.costomout_node.get.bundle := core.io.costomout
-
-      for(i <- 0 until GlobalParams.Num_Slavecores){
-        outer.costomMasterBits_Nodes(i).get.bundle := core.io.costom_FIFOout(i).bits
-        outer.costomMasterValid_Nodes(i).get.bundle := core.io.costom_FIFOout(i).valid
-        core.io.costom_FIFOout(i).ready := outer.costomMasterReady_Nodes(i).get.bundle
+  for(i <- 0 until GlobalParams.Num_Mastercores){
+     if(outer.tileParams.hartId == GlobalVariables.List_MasterId(i)){
+      for(j <- 0 until GlobalParams.Num_Slavecores){
+        outer.costomMasterBits_Nodes(i).get(j).bundle := core.io.costom_FIFOout(j).bits
+        outer.costomMasterValid_Nodes(i).get(j).bundle := core.io.costom_FIFOout(j).valid
+        core.io.costom_FIFOout(j).ready := outer.costomMasterReady_Nodes(i).get(j).bundle
       }
     }
-    else{
-      for(i <- 0 until GlobalParams.Num_Slavecores){
-        if(outer.tileParams.hartId == GlobalParams.List_Slaveid(i)){
-          core.io.costom_FIFOin.bits := outer.costomSlaveBits_Nodes(i).get.bundle
-          core.io.costom_FIFOin.valid := outer.costomSlaveValid_Nodes(i).get.bundle
-          outer.costomSlaveReady_Nodes(i).get.bundle := core.io.costom_FIFOin.ready
-        }
-      }
-        
-    }
-        
+  }
+  
     
-    /*
-    else if(outer.tileParams.hartId == 1){
-        //core.io.costomin := outer.costomin_node.get.bundle
-
-        core.io.costom_FIFOin.bits := outer.costomSlaveBits_Nodes(0).get.bundle
-        core.io.costom_FIFOin.valid := outer.costomSlaveValid_Nodes(0).get.bundle
-        outer.costomSlaveReady_Nodes(0).get.bundle := core.io.costom_FIFOin.ready
+  for(i <- 0 until GlobalParams.Num_Slavecores){
+    if(outer.tileParams.hartId == GlobalVariables.List_SlaveId(i)){
+      for(j <- 0 until GlobalParams.Num_Mastercores){
+        core.io.costom_FIFOin(j).bits := outer.costomSlaveBits_Nodes(i).get(j).bundle
+        core.io.costom_FIFOin(j).valid := outer.costomSlaveValid_Nodes(i).get(j).bundle
+        outer.costomSlaveReady_Nodes(i).get(j).bundle := core.io.costom_FIFOin(j).ready
+      }
       
     }
-    else if(outer.tileParams.hartId == 2){
-        core.io.costom_FIFOin.bits := outer.costomSlaveBits_Nodes(1).get.bundle
-        core.io.costom_FIFOin.valid := outer.costomSlaveValid_Nodes(1).get.bundle
-        outer.costomSlaveReady_Nodes(1).get.bundle := core.io.costom_FIFOin.ready
-    }
-    else if(outer.tileParams.hartId == 3){
-        core.io.costom_FIFOin.bits := outer.costomSlaveBits_Nodes(2).get.bundle
-        core.io.costom_FIFOin.valid := outer.costomSlaveValid_Nodes(2).get.bundle
-        outer.costomSlaveReady_Nodes(2).get.bundle := core.io.costom_FIFOin.ready
-    }
-    else if(outer.tileParams.hartId == 4){
-        core.io.costom_FIFOin.bits := outer.costomSlaveBits_Nodes(3).get.bundle
-        core.io.costom_FIFOin.valid := outer.costomSlaveValid_Nodes(3).get.bundle
-        outer.costomSlaveReady_Nodes(3).get.bundle := core.io.costom_FIFOin.ready
-    }
-    */
+  }
 
     
   
