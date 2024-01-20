@@ -276,53 +276,25 @@ trait CanAttachTile {
   //costom connect
   def costomConnect(domain: TilePRCIDomain[TileType], context: TileContextType): Unit = {
     implicit val p = context.p
-    GlobalParams.Master_core = 1
-    GlobalParams.List_Slaveid = GlobalParams.List_hartid.filter(_ != GlobalParams.Master_core)
-    if(domain.tile.tileParams.hartId == GlobalParams.Master_core){
-      //context.costomInterNode := domain.tile.costomout_node.get
-
-      for(i <- 0 until GlobalParams.Num_Slavecores){
-        context.costomBits_Nodes(i) := domain.tile.costomMasterBits_Nodes(i).get
-        context.costomValid_Nodes(i) := domain.tile.costomMasterValid_Nodes(i).get
-        domain.tile.costomMasterReady_Nodes(i).get := context.costomReady_Nodes(i)
-      }
-    }
-    else{
-      //domain.tile.costomin_node.get := context.costomInterNode
-      for(i <- 0 until GlobalParams.Num_Slavecores){
-        if(domain.tile.tileParams.hartId == GlobalParams.List_Slaveid(i)){
-          domain.tile.costomSlaveBits_Nodes(i).get := context.costomBits_Nodes(i)
-          domain.tile.costomSlaveValid_Nodes(i).get := context.costomValid_Nodes(i)
-          context.costomReady_Nodes(i) := domain.tile.costomSlaveReady_Nodes(i).get
+    for(i <- 0 until GlobalParams.Num_Mastercores){
+      if(domain.tile.tileParams.hartId == GlobalVariables.List_MasterId(i)){
+        for(j <- 0 until GlobalParams.Num_Slavecores){
+          context.costomBits_Nodes(i)(j) := domain.tile.costomMasterBits_Nodes(i).get(j)
+          context.costomValid_Nodes(i)(j) := domain.tile.costomMasterValid_Nodes(i).get(j)
+          domain.tile.costomMasterReady_Nodes(i).get(j) := context.costomReady_Nodes(i)(j)
         }
       }
     }
-    /*
-    else if(domain.tile.tileParams.hartId == 1){
-      domain.tile.costomin_node.get := context.costomInterNode
-
-      domain.tile.costomSlaveBits_Nodes(0).get := context.costomBits_Nodes(0)
-      domain.tile.costomSlaveValid_Nodes(0).get := context.costomValid_Nodes(0)
-      context.costomReady_Nodes(0) := domain.tile.costomSlaveReady_Nodes(0).get
+  
+    for(i <- 0 until GlobalParams.Num_Slavecores){
+      if(domain.tile.tileParams.hartId == GlobalVariables.List_SlaveId(i)){
+        for(j <- 0 until GlobalParams.Num_Mastercores){
+          domain.tile.costomSlaveBits_Nodes(i).get(j) := context.costomBits_Nodes(j)(i)
+          domain.tile.costomSlaveValid_Nodes(i).get(j) := context.costomValid_Nodes(j)(i)
+          context.costomReady_Nodes(j)(i) := domain.tile.costomSlaveReady_Nodes(i).get(j)
+        }
+      }
     }
-    else if(domain.tile.tileParams.hartId == 2){
-      domain.tile.costomSlaveBits_Nodes(1).get := context.costomBits_Nodes(1)
-      domain.tile.costomSlaveValid_Nodes(1).get := context.costomValid_Nodes(1)
-      context.costomReady_Nodes(1) := domain.tile.costomSlaveReady_Nodes(1).get
-    }
-    else if(domain.tile.tileParams.hartId == 3){
-      domain.tile.costomSlaveBits_Nodes(2).get := context.costomBits_Nodes(2)
-      domain.tile.costomSlaveValid_Nodes(2).get := context.costomValid_Nodes(2)
-      context.costomReady_Nodes(2) := domain.tile.costomSlaveReady_Nodes(2).get
-    }
-    else if(domain.tile.tileParams.hartId == 4){
-      domain.tile.costomSlaveBits_Nodes(3).get := context.costomBits_Nodes(3)
-      domain.tile.costomSlaveValid_Nodes(3).get := context.costomValid_Nodes(3)
-      context.costomReady_Nodes(3) := domain.tile.costomSlaveReady_Nodes(3).get
-    }
-    */
-    
-    
   }
   //costom connect end
   
