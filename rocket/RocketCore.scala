@@ -125,31 +125,57 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   def nTotalRoCCCSRs = tile.roccCSRs.flatten.size
 
   //costom start
-  GlobalParams.Master_core = 1
   val FIFO = Module(new SyncFIFO(GlobalParams.Data_type, GlobalParams.depth))
   val costom_reg = RegInit(44.U(GlobalParams.Data_width.W))
   val costom_regbool = RegInit(true.B)
   val costom_regbool1 = RegInit(false.B)
-  val reg_sels = RegInit(VecInit(Seq(true.B, true.B, false.B, false.B, true.B, false.B, false.B)))
-  when(io.hartid === GlobalParams.Master_core.U){
-    val mux = Module(new otmMux(GlobalParams.Num_Slavecores))
-    FIFO.io.in.bits := costom_reg
-    FIFO.io.in.valid := costom_regbool
-    FIFO.io.out <> mux.io.in
-    mux.io.out <> io.costom_FIFOout
-    mux.io.sels := reg_sels
-    costom_reg := costom_reg + 1.U
-    io.costomout := costom_reg
+  val reg_sels = RegInit(VecInit(
+    VecInit(true.B, false.B, true.B, false.B),
+    VecInit(false.B, true.B, false.B, false.B)
+  ))
+
+  val len = reg_sels(0).length
+  val reg_slavesels = RegInit(VecInit((0 until len).map { i =>
+    Cat(reg_sels.map(_(i)))
+  }))
+  val width = reg_slavesels(0).getWidth
+  val reg_slavesels_re = RegInit(VecInit((0 until len).map {i =>
+      Reverse(reg_slavesels(i))
+  }))
+
+
+  val MasterID = VecInit(GlobalVariables.List_MasterId.map(_.U))
+  val SlaveID = VecInit(GlobalVariables.List_SlaveId.map(_.U))
+  val MIdindex = MasterID.indexWhere(_ === io.hartid)
+  val SIdindex = SlaveID.indexWhere(_ === io.hartid)
+
+  when(MasterID.contains(io.hartid)){
+        val otmmux = Module(new otmMux(GlobalParams.Num_Slavecores))
+        FIFO.io.in.bits := costom_reg
+        FIFO.io.in.valid := costom_regbool
+        FIFO.io.out <> otmmux.io.in
+        otmmux.io.out <> io.costom_FIFOout
+        otmmux.io.sels := reg_sels(MIdindex)
+        costom_reg := costom_reg + MIdindex
+        io.costomout := costom_reg
+      
   }.otherwise{
-    io.costom_FIFOin <> FIFO.io.in
-    FIFO.io.out.ready := costom_regbool1
-    costom_reg := io.costomin
-  }
+        val mtomux = Module(new mtoMux(GlobalParams.Num_Mastercores))
+        io.costom_FIFOin <> mtomux.io.in
+        mtomux.io.out <> FIFO.io.in
+        mtomux.io.sels := reg_slavesels_re(SIdindex).asBools
+        FIFO.io.out.ready := costom_regbool1
+        costom_reg := io.costomin
+        }
+
   dontTouch(costom_reg)
   dontTouch(io.costomout)
   dontTouch(io.costomin)
   dontTouch(io.costom_FIFOin)
   dontTouch(io.costom_FIFOout)
+  dontTouch(reg_sels)
+  dontTouch(reg_slavesels)
+  dontTouch(reg_slavesels_re)
   //costom end
 
   val clock_en_reg = RegInit(true.B)
