@@ -232,9 +232,9 @@ trait DefaultTileContextType
 { this: BaseSubsystem =>
   val debugNode: IntSyncOutwardNode
   //costom node
-  val costomReady_Nodes = List.fill(GlobalParams.Num_Slavecores)(BundleBridgeEphemeralNode[Bool]())
-  val costomValid_Nodes = List.fill(GlobalParams.Num_Slavecores)(BundleBridgeEphemeralNode[Bool]())
-  val costomBits_Nodes = List.fill(GlobalParams.Num_Slavecores)(BundleBridgeEphemeralNode[UInt]())
+  val costomReady_Nodes = Seq.fill(GlobalParams.Num_Mastercores)(List.fill(GlobalParams.Num_Slavecores)(BundleBridgeEphemeralNode[Bool]()))
+  val costomValid_Nodes = Seq.fill(GlobalParams.Num_Mastercores)(List.fill(GlobalParams.Num_Slavecores)(BundleBridgeEphemeralNode[Bool]()))
+  val costomBits_Nodes = Seq.fill(GlobalParams.Num_Mastercores)(List.fill(GlobalParams.Num_Slavecores)(BundleBridgeEphemeralNode[UInt]()))
   //val costomInterNode = BundleBridgeEphemeralNode[UInt]()
   //node end
 } // TODO: ideally this bound would be softened to LazyModule
