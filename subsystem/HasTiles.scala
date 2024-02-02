@@ -232,10 +232,14 @@ trait DefaultTileContextType
 { this: BaseSubsystem =>
   val debugNode: IntSyncOutwardNode
   //costom node
-  val costomReady_Nodes = Seq.fill(GlobalParams.Num_Mastercores)(List.fill(GlobalParams.Num_Slavecores)(BundleBridgeEphemeralNode[Bool]()))
-  val costomValid_Nodes = Seq.fill(GlobalParams.Num_Mastercores)(List.fill(GlobalParams.Num_Slavecores)(BundleBridgeEphemeralNode[Bool]()))
-  val costomBits_Nodes = Seq.fill(GlobalParams.Num_Mastercores)(List.fill(GlobalParams.Num_Slavecores)(BundleBridgeEphemeralNode[UInt]()))
-  //val costomInterNode = BundleBridgeEphemeralNode[UInt]()
+  //Group1
+  val costomReady_Nodes1 = Seq.fill(GlobalParams.Num_Groupcores)(Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeEphemeralNode[Bool]()))
+  val costomValid_Nodes1 = Seq.fill(GlobalParams.Num_Groupcores)(Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeEphemeralNode[Bool]()))
+  val costomBits_Nodes1 = Seq.fill(GlobalParams.Num_Groupcores)(Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeEphemeralNode[UInt]()))
+  //Group2
+  val costomReady_Nodes2 = Seq.fill(GlobalParams.Num_Groupcores)(Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeEphemeralNode[Bool]()))
+  val costomValid_Nodes2 = Seq.fill(GlobalParams.Num_Groupcores)(Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeEphemeralNode[Bool]()))
+  val costomBits_Nodes2 = Seq.fill(GlobalParams.Num_Groupcores)(Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeEphemeralNode[UInt]()))
   //node end
 } // TODO: ideally this bound would be softened to LazyModule
 
@@ -276,22 +280,32 @@ trait CanAttachTile {
   //costom connect
   def costomConnect(domain: TilePRCIDomain[TileType], context: TileContextType): Unit = {
     implicit val p = context.p
-    for(i <- 0 until GlobalParams.Num_Mastercores){
-      if(domain.tile.tileParams.hartId == GlobalVariables.List_MasterId(i)){
-        for(j <- 0 until GlobalParams.Num_Slavecores){
-          context.costomBits_Nodes(i)(j) := domain.tile.costomMasterBits_Nodes(i).get(j)
-          context.costomValid_Nodes(i)(j) := domain.tile.costomMasterValid_Nodes(i).get(j)
-          domain.tile.costomMasterReady_Nodes(i).get(j) := context.costomReady_Nodes(i)(j)
+    //Group1 connect
+    for(i <- 0 until GlobalParams.Num_Groupcores){
+      if(tileParams.hartId == GlobalParams.List_hartid1(i)){
+        for(j <- 0 until GlobalParams.Num_Groupcores){
+          context.costomBits_Nodes1(tileParams.hartId)(j) := domain.tile.costomMasterBits_Nodes(j)
+          context.costomValid_Nodes1(tileParams.hartId)(j) := domain.tile.costomMasterValid_Nodes(j)
+          domain.tile.costomMasterReady_Nodes(j) := context.costomReady_Nodes1(tileParams.hartId)(j)
+
+          domain.tile.costomSlaveBits_Nodes(j) := context.costomBits_Nodes1(j)(tileParams.hartId)
+          domain.tile.costomSlaveValid_Nodes(j) := context.costomValid_Nodes1(j)(tileParams.hartId)
+          context.costomReady_Nodes1(j)(tileParams.hartId) := domain.tile.costomSlaveReady_Nodes(j)
         }
       }
     }
-  
-    for(i <- 0 until GlobalParams.Num_Slavecores){
-      if(domain.tile.tileParams.hartId == GlobalVariables.List_SlaveId(i)){
-        for(j <- 0 until GlobalParams.Num_Mastercores){
-          domain.tile.costomSlaveBits_Nodes(i).get(j) := context.costomBits_Nodes(j)(i)
-          domain.tile.costomSlaveValid_Nodes(i).get(j) := context.costomValid_Nodes(j)(i)
-          context.costomReady_Nodes(j)(i) := domain.tile.costomSlaveReady_Nodes(i).get(j)
+
+    //Group2 connnect
+    for(i <- 0 until GlobalParams.Num_Groupcores){
+      if(tileParams.hartId == GlobalParams.List_hartid2(i)){
+        for(j <- 0 until GlobalParams.Num_Groupcores){
+          context.costomBits_Nodes2(tileParams.hartId - 4)(j) := domain.tile.costomMasterBits_Nodes(j)
+          context.costomValid_Nodes2(tileParams.hartId - 4)(j) := domain.tile.costomMasterValid_Nodes(j)
+          domain.tile.costomMasterReady_Nodes(j) := context.costomReady_Nodes2(tileParams.hartId - 4)(j)
+
+          domain.tile.costomSlaveBits_Nodes(j) := context.costomBits_Nodes2(j)(tileParams.hartId - 4)
+          domain.tile.costomSlaveValid_Nodes(j) := context.costomValid_Nodes2(j)(tileParams.hartId - 4)
+          context.costomReady_Nodes2(j)(tileParams.hartId - 4) := domain.tile.costomSlaveReady_Nodes(j)
         }
       }
     }
