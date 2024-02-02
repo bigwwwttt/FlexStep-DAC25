@@ -126,56 +126,340 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
 
   //costom start
   val FIFO = Module(new SyncFIFO(GlobalParams.Data_type, GlobalParams.depth))
+  val otmmux = Module(new otmMux(GlobalParams.Num_Groupcores))
+  val mtomux = Module(new mtoMux(GlobalParams.Num_Groupcores))
+
   val costom_reg = RegInit(44.U(GlobalParams.Data_width.W))
+  val costom_regout = RegInit(1.U(32.W))
+  val costom_regin = RegInit(0.U(32.W))
+  
+  val counter = RegInit(0.U(32.W))
+
   val costom_regbool = RegInit(true.B)
   val costom_regbool1 = RegInit(false.B)
-  val reg_sels = RegInit(VecInit(
-    VecInit(true.B, false.B, true.B, false.B),
-    VecInit(false.B, true.B, false.B, false.B)
-  ))
 
-  val len = reg_sels(0).length
-  val reg_slavesels = RegInit(VecInit((0 until len).map { i =>
-    Cat(reg_sels.map(_(i)))
+  
+  val HartID1 = VecInit(GlobalParams.List_hartid1.map(_.U))
+  val HartID2 = VecInit(GlobalParams.List_hartid2.map(_.U))
+
+  //Mux control signals and assertion
+  val reg_sels1 = WireInit(VecInit(Seq(
+    VecInit(false.B, false.B, false.B, true.B),
+    VecInit(false.B, false.B, false.B, false.B),
+    VecInit(false.B, false.B, false.B, false.B),
+    VecInit(false.B, false.B, false.B, false.B)
+  )))
+  val reg_sels2 = WireInit(VecInit(Seq(
+    VecInit(false.B, false.B, false.B, true.B),
+    VecInit(false.B, false.B, true.B, false.B),
+    VecInit(false.B, false.B, false.B, false.B),
+    VecInit(false.B, false.B, false.B, false.B)
+  )))
+
+  
+  val len1 = reg_sels1(0).length
+  val reg_slavesels1 = WireInit(VecInit((0 until len1).map {i =>
+    Reverse(Cat(reg_sels1.map(_(i))))
   }))
-  val width = reg_slavesels(0).getWidth
-  val reg_slavesels_re = RegInit(VecInit((0 until len).map {i =>
-      Reverse(reg_slavesels(i))
+  
+
+  val len2 = reg_sels2(0).length
+  val reg_slavesels2 = WireInit(VecInit((0 until len2).map {i =>
+    Reverse(Cat(reg_sels2.map(_(i))))
   }))
+  
+  
 
-
-  val MasterID = VecInit(GlobalVariables.List_MasterId.map(_.U))
-  val SlaveID = VecInit(GlobalVariables.List_SlaveId.map(_.U))
-  val MIdindex = MasterID.indexWhere(_ === io.hartid)
-  val SIdindex = SlaveID.indexWhere(_ === io.hartid)
-
-  when(MasterID.contains(io.hartid)){
-        val otmmux = Module(new otmMux(GlobalParams.Num_Slavecores))
-        FIFO.io.in.bits := costom_reg
-        FIFO.io.in.valid := costom_regbool
-        FIFO.io.out <> otmmux.io.in
-        otmmux.io.out <> io.costom_FIFOout
-        otmmux.io.sels := reg_sels(MIdindex)
-        costom_reg := costom_reg + MIdindex
-        io.costomout := costom_reg
-      
-  }.otherwise{
-        val mtomux = Module(new mtoMux(GlobalParams.Num_Mastercores))
-        io.costom_FIFOin <> mtomux.io.in
-        mtomux.io.out <> FIFO.io.in
-        mtomux.io.sels := reg_slavesels_re(SIdindex).asBools
-        FIFO.io.out.ready := costom_regbool1
-        costom_reg := io.costomin
-        }
-
+  //debug singals
+  dontTouch(costom_regbool)
+  dontTouch(costom_regbool1)
+  dontTouch(reg_sels1)
+  dontTouch(reg_slavesels1)
+  dontTouch(reg_sels2)
+  dontTouch(reg_slavesels2)
   dontTouch(costom_reg)
+  dontTouch(costom_regin)
   dontTouch(io.costomout)
   dontTouch(io.costomin)
   dontTouch(io.costom_FIFOin)
   dontTouch(io.costom_FIFOout)
-  dontTouch(reg_sels)
-  dontTouch(reg_slavesels)
-  dontTouch(reg_slavesels_re)
+  dontTouch(counter)
+
+  counter := counter + 1.U
+  io.countout := counter
+
+  when(HartID1.contains(io.hartid)){
+    when(counter <= 20.U){
+      GlobalParams.List_MasterId1 = List(0, 1, 2)
+      GlobalParams.Num_Mastercores1 = GlobalParams.List_MasterId1.length
+      GlobalParams.Num_Slavecores1 = GlobalParams.Num_Groupcores - GlobalParams.Num_Mastercores1
+      GlobalParams.List_SlaveId1 = GlobalParams.List_hartid1.filterNot(GlobalParams.List_MasterId1.contains)
+
+      costom_regbool := true.B
+      costom_regbool1 := false.B
+  
+      //Mux control signals and assertion
+      reg_sels1 := VecInit(Seq(
+        VecInit(false.B, false.B, false.B, true.B),
+        VecInit(false.B, false.B, false.B, false.B),
+        VecInit(false.B, false.B, false.B, false.B),
+        VecInit(false.B, false.B, false.B, false.B)
+        ))
+  
+      val len1 = reg_sels1(0).length
+      reg_slavesels1 := VecInit((0 until len1).map {i =>
+        Reverse(Cat(reg_sels1.map(_(i))))
+      })
+      
+      for(i <- 0 until GlobalParams.Num_Slavecores1){
+        assert(!(reg_sels1(GlobalParams.List_SlaveId1(i)).reduce(_ || _)))
+        assert(PopCount(reg_slavesels1(GlobalParams.List_SlaveId1(i))) <= 1.U)
+      }
+      for(i <- 0 until GlobalParams.Num_Mastercores1){
+        assert(PopCount(reg_slavesels1(GlobalParams.List_MasterId1(i))) === 0.U)
+      }
+      
+      
+      
+      //GlobalList -> Vec
+      val MasterID1 = VecInit(GlobalParams.List_MasterId1.map(_.U))
+      val SlaveID1 = VecInit(GlobalParams.List_SlaveId1.map(_.U))
+      val MIdindex1 = MasterID1.indexWhere(_ === io.hartid)
+      val SIdindex1 = SlaveID1.indexWhere(_ === io.hartid)
+
+      when(MasterID1.contains(io.hartid)){
+        FIFO.io.in.bits := costom_reg
+        FIFO.io.in.valid := costom_regbool
+        FIFO.io.out <> otmmux.io.in
+        io.costom_FIFOout <> otmmux.io.out
+        otmmux.io.sels := reg_sels1(io.hartid)
+        costom_reg := costom_reg + MIdindex1 + 1.U
+
+        mtomux.io.out.ready := false.B
+        for(i <- 0 until GlobalParams.Num_Groupcores){
+          mtomux.io.in(i).bits := 0.U
+          mtomux.io.in(i).valid := false.B
+          mtomux.io.sels(i) := false.B
+        }
+      }.otherwise{
+        io.costom_FIFOin <> mtomux.io.in
+        mtomux.io.out <> FIFO.io.in
+        mtomux.io.sels := reg_slavesels1(io.hartid).asBools
+        FIFO.io.out.ready := costom_regbool1
+
+        otmmux.io.in.valid := false.B
+        otmmux.io.in.bits := 0.U
+        for(i <- 0 until GlobalParams.Num_Groupcores){
+          otmmux.io.out(i).ready := false.B
+          otmmux.io.sels(i) := false.B
+        }
+      }
+    }.otherwise{
+      GlobalParams.List_MasterId1 = List(1, 2)
+      GlobalParams.Num_Mastercores1 = GlobalParams.List_MasterId1.length
+      GlobalParams.Num_Slavecores1 = GlobalParams.Num_Groupcores - GlobalParams.Num_Mastercores1
+      GlobalParams.List_SlaveId1 = GlobalParams.List_hartid1.filterNot(GlobalParams.List_MasterId1.contains)
+
+      costom_regbool := true.B
+      costom_regbool1 := false.B
+  
+      //Mux control signals and assertion
+      reg_sels1 := VecInit(Seq(
+        VecInit(false.B, false.B, false.B, false.B),
+        VecInit(true.B, false.B, false.B, true.B),
+        VecInit(false.B, false.B, false.B, false.B),
+        VecInit(false.B, false.B, false.B, false.B)
+      ))
+  
+      val len1 = reg_sels1(0).length
+      reg_slavesels1 := VecInit((0 until len1).map {i =>
+        Reverse(Cat(reg_sels1.map(_(i))))
+      })
+      
+      for(i <- 0 until GlobalParams.Num_Slavecores1){
+        assert(!(reg_sels1(GlobalParams.List_SlaveId1(i)).reduce(_ || _)))
+        assert(PopCount(reg_slavesels1(GlobalParams.List_SlaveId1(i))) <= 1.U)
+      }
+      for(i <- 0 until GlobalParams.Num_Mastercores1){
+        assert(PopCount(reg_slavesels1(GlobalParams.List_MasterId1(i))) === 0.U)
+      }
+      
+      
+      
+      //GlobalList -> Vec
+      val MasterID1 = VecInit(GlobalParams.List_MasterId1.map(_.U))
+      val SlaveID1 = VecInit(GlobalParams.List_SlaveId1.map(_.U))
+      val MIdindex1 = MasterID1.indexWhere(_ === io.hartid)
+      val SIdindex1 = SlaveID1.indexWhere(_ === io.hartid)
+
+      when(MasterID1.contains(io.hartid)){
+        FIFO.io.in.bits := costom_reg
+        FIFO.io.in.valid := costom_regbool
+        FIFO.io.out <> otmmux.io.in
+        io.costom_FIFOout <> otmmux.io.out
+        otmmux.io.sels := reg_sels1(io.hartid)
+        costom_reg := costom_reg + MIdindex1 + 1.U
+
+        mtomux.io.out.ready := false.B
+        for(i <- 0 until GlobalParams.Num_Groupcores){
+          mtomux.io.in(i).bits := 0.U
+          mtomux.io.in(i).valid := false.B
+          mtomux.io.sels(i) := false.B
+        }
+      }.otherwise{
+        io.costom_FIFOin <> mtomux.io.in
+        mtomux.io.out <> FIFO.io.in
+        mtomux.io.sels := reg_slavesels1(io.hartid).asBools
+        FIFO.io.out.ready := costom_regbool1
+
+        otmmux.io.in.valid := false.B
+        otmmux.io.in.bits := 0.U
+        for(i <- 0 until GlobalParams.Num_Groupcores){
+          otmmux.io.out(i).ready := false.B
+          otmmux.io.sels(i) := false.B
+        }
+      }
+    }
+  }.otherwise{
+    when(counter <= 20.U){
+      GlobalParams.List_MasterId2 = List(4, 5)
+      GlobalParams.Num_Mastercores2 = GlobalParams.List_MasterId2.length
+      GlobalParams.Num_Slavecores2 = GlobalParams.Num_Groupcores - GlobalParams.Num_Mastercores2
+      GlobalParams.List_SlaveId2 = GlobalParams.List_hartid2.filterNot(GlobalParams.List_MasterId2.contains)
+  
+      costom_regbool := true.B
+      costom_regbool1 := false.B
+  
+      //Mux control signals and assertion
+      reg_sels2 := VecInit(Seq(
+      VecInit(false.B, false.B, false.B, true.B),
+      VecInit(false.B, false.B, true.B, false.B),
+      VecInit(false.B, false.B, false.B, false.B),
+      VecInit(false.B, false.B, false.B, false.B)
+      ))
+
+      val len2 = reg_sels2(0).length
+      reg_slavesels2 := VecInit((0 until len2).map {i =>
+        Reverse(Cat(reg_sels2.map(_(i))))
+      })
+      
+      for(i <- 0 until GlobalParams.Num_Slavecores2){
+        assert(!(reg_sels2(GlobalParams.List_SlaveId2(i) - 4).reduce(_ || _)))
+        assert(PopCount(reg_slavesels2(GlobalParams.List_SlaveId2(i) - 4)) <= 1.U)
+      }
+      for(i <- 0 until GlobalParams.Num_Mastercores2){
+        assert(PopCount(reg_slavesels2(GlobalParams.List_MasterId2(i) - 4)) === 0.U)
+      }
+      
+      //GlobalList -> Vec  
+      val MasterID2 = VecInit(GlobalParams.List_MasterId2.map(_.U))
+      val SlaveID2 = VecInit(GlobalParams.List_SlaveId2.map(_.U))
+      val MIdindex2 = MasterID2.indexWhere(_ === io.hartid)
+      val SIdindex2 = SlaveID2.indexWhere(_ === io.hartid)
+
+      when(MasterID2.contains(io.hartid)){
+        FIFO.io.in.bits := costom_reg
+        FIFO.io.in.valid := costom_regbool
+        FIFO.io.out <> otmmux.io.in
+        io.costom_FIFOout <> otmmux.io.out
+        otmmux.io.sels := reg_sels2(io.hartid - 4.U)
+        costom_reg := costom_reg + MIdindex2 + 2.U
+
+        mtomux.io.out.ready := false.B
+        for(i <- 0 until GlobalParams.Num_Groupcores){
+          mtomux.io.in(i).bits := 0.U
+          mtomux.io.in(i).valid := false.B
+          mtomux.io.sels(i) := false.B
+        }
+      }.otherwise{
+        io.costom_FIFOin <> mtomux.io.in
+        mtomux.io.out <> FIFO.io.in
+        mtomux.io.sels := reg_slavesels2(io.hartid - 4.U).asBools
+        FIFO.io.out.ready := costom_regbool1
+
+        otmmux.io.in.valid := false.B
+        otmmux.io.in.bits := 0.U
+        for(i <- 0 until GlobalParams.Num_Groupcores){
+          otmmux.io.out(i).ready := false.B
+          otmmux.io.sels(i) := false.B
+        }
+      }
+    }.otherwise{
+      GlobalParams.List_MasterId2 = List(4, 6)
+      GlobalParams.Num_Mastercores2 = GlobalParams.List_MasterId2.length
+      GlobalParams.Num_Slavecores2 = GlobalParams.Num_Groupcores - GlobalParams.Num_Mastercores2
+      GlobalParams.List_SlaveId2 = GlobalParams.List_hartid2.filterNot(GlobalParams.List_MasterId2.contains)
+  
+      costom_regbool := true.B
+      costom_regbool1 := false.B
+  
+      //Mux control signals and assertion
+      reg_sels2 := VecInit(Seq(
+      VecInit(false.B, false.B, false.B, true.B),
+      VecInit(false.B, false.B, false.B, false.B),
+      VecInit(false.B, true.B, false.B, false.B),
+      VecInit(false.B, false.B, false.B, false.B)
+      ))
+
+      val len2 = reg_sels2(0).length
+      reg_slavesels2 := VecInit((0 until len2).map {i =>
+        Reverse(Cat(reg_sels2.map(_(i))))
+      })
+      
+      for(i <- 0 until GlobalParams.Num_Slavecores2){
+        assert(!(reg_sels2(GlobalParams.List_SlaveId2(i) - 4).reduce(_ || _)))
+        assert(PopCount(reg_slavesels2(GlobalParams.List_SlaveId2(i) - 4)) <= 1.U)
+      }
+      for(i <- 0 until GlobalParams.Num_Mastercores2){
+        assert(PopCount(reg_slavesels2(GlobalParams.List_MasterId2(i) - 4)) === 0.U)
+      }
+      
+      
+      //GlobalList -> Vec  
+      val MasterID2 = VecInit(GlobalParams.List_MasterId2.map(_.U))
+      val SlaveID2 = VecInit(GlobalParams.List_SlaveId2.map(_.U))
+      val MIdindex2 = MasterID2.indexWhere(_ === io.hartid)
+      val SIdindex2 = SlaveID2.indexWhere(_ === io.hartid)
+
+      when(MasterID2.contains(io.hartid)){
+        FIFO.io.in.bits := costom_reg
+        FIFO.io.in.valid := costom_regbool
+        FIFO.io.out <> otmmux.io.in
+        io.costom_FIFOout <> otmmux.io.out
+        otmmux.io.sels := reg_sels2(io.hartid - 4.U)
+        costom_reg := costom_reg + MIdindex2 + 2.U
+
+        mtomux.io.out.ready := false.B
+        for(i <- 0 until GlobalParams.Num_Groupcores){
+          mtomux.io.in(i).bits := 0.U
+          mtomux.io.in(i).valid := false.B
+          mtomux.io.sels(i) := false.B
+        }
+      }.otherwise{
+        io.costom_FIFOin <> mtomux.io.in
+        mtomux.io.out <> FIFO.io.in
+        mtomux.io.sels := reg_slavesels2(io.hartid - 4.U).asBools
+        FIFO.io.out.ready := costom_regbool1
+
+        otmmux.io.in.valid := false.B
+        otmmux.io.in.bits := 0.U
+        for(i <- 0 until GlobalParams.Num_Groupcores){
+          otmmux.io.out(i).ready := false.B
+          otmmux.io.sels(i) := false.B
+        }
+      }
+    }
+  }
+  
+
+  when(io.hartid === 0.U){
+    costom_regout := costom_regout + 1.U
+    io.costomout := costom_regout
+  }.elsewhen(io.hartid === 1.U){
+    costom_regin := io.costomin
+  }
+
+  
   //costom end
 
   val clock_en_reg = RegInit(true.B)
