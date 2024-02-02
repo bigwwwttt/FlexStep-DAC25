@@ -1,7 +1,7 @@
-     This code adds communicating channels between one master core and multiple slave cores. 
-     We add a globalparams.scala file at generators/rocket-chip/src/main/scala/util/globalparams.scala to manage some important parameters:
-
-
+     This code adds communicating channels between master core(s) and multiple slave core(s) which can be changed in runtime.
      
-     When the number of slave cores changes, the number of sels signals also needs to change. The sels singals are controlled by reg_sels at 
-     class Roctet(generators/rocket-chip/src/main/scala/rocket/RocketCore.scala)
+     We add a globalparams.scala file at generators/rocket-chip/src/main/scala/util/globalparams.scala to manage some important parameters
+     
+     The implementation codes are in the following files: HasTiles.scala; BaseTile.scala; RocketTile.scala; RocketCore.scala
+     
+     When the number and ID of Master cores and slave cores change, the sels signals also needs to change.The selection signal requires satisfying some assertion conditions. The sels singals are controlled by reg_sels at class Roctet(generators/rocket-chip/src/main/scala/rocket/RocketCore.scala)
