@@ -130,27 +130,18 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
   val core = Module(new Rocket(outer)(outer.p))
   
   //costom start
-  for(i <- 0 until GlobalParams.Num_Mastercores){
-     if(outer.tileParams.hartId == GlobalVariables.List_MasterId(i)){
-      for(j <- 0 until GlobalParams.Num_Slavecores){
-        outer.costomMasterBits_Nodes(i).get(j).bundle := core.io.costom_FIFOout(j).bits
-        outer.costomMasterValid_Nodes(i).get(j).bundle := core.io.costom_FIFOout(j).valid
-        core.io.costom_FIFOout(j).ready := outer.costomMasterReady_Nodes(i).get(j).bundle
-      }
-    }
+
+
+  for(i <- 0 until GlobalParams.Num_Groupcores){
+    outer.costomMasterBits_Nodes(i).bundle := core.io.costom_FIFOout(i).bits
+    outer.costomMasterValid_Nodes(i).bundle := core.io.costom_FIFOout(i).valid
+    core.io.costom_FIFOout(i).ready := outer.costomMasterReady_Nodes(i).bundle
+
+    core.io.costom_FIFOin(i).bits := outer.costomSlaveBits_Nodes(i).bundle
+    core.io.costom_FIFOin(i).valid := outer.costomSlaveValid_Nodes(i).bundle
+    outer.costomSlaveReady_Nodes(i).bundle := core.io.costom_FIFOin(i).ready
   }
   
-    
-  for(i <- 0 until GlobalParams.Num_Slavecores){
-    if(outer.tileParams.hartId == GlobalVariables.List_SlaveId(i)){
-      for(j <- 0 until GlobalParams.Num_Mastercores){
-        core.io.costom_FIFOin(j).bits := outer.costomSlaveBits_Nodes(i).get(j).bundle
-        core.io.costom_FIFOin(j).valid := outer.costomSlaveValid_Nodes(i).get(j).bundle
-        outer.costomSlaveReady_Nodes(i).get(j).bundle := core.io.costom_FIFOin(j).ready
-      }
-      
-    }
-  }
 
     
   
