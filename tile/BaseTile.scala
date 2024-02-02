@@ -224,53 +224,29 @@ abstract class BaseTile private (val crossing: ClockCrossingType, q: Parameters)
   protected val tlMasterXbar = LazyModule(new TLXbar)
   protected val tlSlaveXbar = LazyModule(new TLXbar)
   protected val intXbar = LazyModule(new IntXbar)
+
+  //costom start
+  //Master FIFO Nodes
+  val costomMasterBits_Nodes: Seq[BundleBridgeSource[UInt]] = 
+      Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeSource[UInt](Some(() => GlobalParams.Data_type)))
   
-  
-  //Master FIFO Node
-  val costomMasterBits_Nodes: Seq[Option[Seq[BundleBridgeSource[UInt]]]] = (0 until GlobalParams.Num_Mastercores).map { i =>
-     if (tileParams.hartId == GlobalVariables.List_MasterId(i))
-        Some(Seq.fill(GlobalParams.Num_Slavecores)(BundleBridgeSource[UInt](Some(() => GlobalParams.Data_type))))
-     else
-        None
-  }
-  
-  val costomMasterValid_Nodes: Seq[Option[Seq[BundleBridgeSource[Bool]]]] = (0 until GlobalParams.Num_Mastercores).map { i =>
-     if (tileParams.hartId == GlobalVariables.List_MasterId(i))
-        Some(Seq.fill(GlobalParams.Num_Slavecores)(BundleBridgeSource[Bool](Some(() => Bool()))))
-     else
-        None
-  }
+  val costomMasterValid_Nodes: Seq[BundleBridgeSource[Bool]] =
+      Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeSource[Bool](Some(() => Bool())))
  
-  val costomMasterReady_Nodes: Seq[Option[Seq[BundleBridgeSink[Bool]]]] = (0 until GlobalParams.Num_Mastercores).map { i =>
-     if (tileParams.hartId == GlobalVariables.List_MasterId(i))
-        Some(Seq.fill(GlobalParams.Num_Slavecores)(BundleBridgeSink[Bool](Some(() => Bool()))))
-     else
-       None
-  }
+  val costomMasterReady_Nodes: Seq[BundleBridgeSink[Bool]] = 
+      Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeSink[Bool](Some(() => Bool())))
+
 
   //Slave FIFO Nodes
-  val costomSlaveValid_Nodes: Seq[Option[Seq[BundleBridgeSink[Bool]]]] = (0 until GlobalParams.Num_Slavecores).map { i =>
-     if (tileParams.hartId == GlobalVariables.List_SlaveId(i))
-        Some(Seq.fill(GlobalParams.Num_Mastercores)(BundleBridgeSink[Bool](Some(() => Bool()))))
-     else
-        None
-  }
+  val costomSlaveValid_Nodes: Seq[BundleBridgeSink[Bool]] = 
+      Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeSink[Bool](Some(() => Bool())))
 
-  val costomSlaveBits_Nodes: Seq[Option[Seq[BundleBridgeSink[UInt]]]] = (0 until GlobalParams.Num_Slavecores).map { i =>
-     if (tileParams.hartId == GlobalVariables.List_SlaveId(i))
-        Some(Seq.fill(GlobalParams.Num_Mastercores)(BundleBridgeSink[UInt](Some(() => UInt(GlobalParams.Data_width.W)))))
-     else
-        None
-  }
+  val costomSlaveBits_Nodes: Seq[BundleBridgeSink[UInt]] =
+      Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeSink[UInt](Some(() => GlobalParams.Data_type)))
 
-  val costomSlaveReady_Nodes: Seq[Option[Seq[BundleBridgeSource[Bool]]]] = (0 until GlobalParams.Num_Slavecores).map { i =>
-     if (tileParams.hartId == GlobalVariables.List_SlaveId(i))
-        Some(Seq.fill(GlobalParams.Num_Mastercores)(BundleBridgeSource[Bool](Some(() => Bool()))))
-     else
-        None
-  }
-  //node end
-  
+  val costomSlaveReady_Nodes: Seq[BundleBridgeSource[Bool]] = 
+      Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeSource[Bool](Some(() => Bool())))
+  //costom end
 
   /** Node for broadcasting a hart id to diplomatic consumers within the tile. */
   val hartIdNexusNode: BundleBridgeNode[UInt] = BundleBroadcast[UInt](registered = p(InsertTimingClosureRegistersOnHartIds))
