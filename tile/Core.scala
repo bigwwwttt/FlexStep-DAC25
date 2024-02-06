@@ -177,7 +177,7 @@ trait HasCoreIO extends   {
     val costomout = UInt(32.W).asOutput
     val traceStall = Bool().asInput
     val costomin = UInt(32.W).asInput
-    val costom_FIFOin = Flipped(Vec(GlobalParams.Num_Mastercores, Decoupled(GlobalParams.Data_type)))
-    val costom_FIFOout = Vec(GlobalParams.Num_Slavecores, Decoupled(GlobalParams.Data_type))
+    val costom_FIFOin = Flipped(Vec(GlobalParams.Num_Groupcores, Decoupled(GlobalParams.Data_type)))
+    val costom_FIFOout = Vec(GlobalParams.Num_Groupcores, Decoupled(GlobalParams.Data_type))
   }
 }
