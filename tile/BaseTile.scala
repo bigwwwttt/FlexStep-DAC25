@@ -13,7 +13,7 @@ import freechips.rocketchip.rocket._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util._
 import freechips.rocketchip.prci.{ClockSinkParameters}
-import freechips.rocketchip.tile.GlobalParams
+import freechips.rocketchip.stage.ConfigsAnnotation
 
 case object TileVisibilityNodeKey extends Field[TLEphemeralNode]
 case object TileKey extends Field[TileParams]
@@ -236,7 +236,26 @@ abstract class BaseTile private (val crossing: ClockCrossingType, q: Parameters)
   val costomMasterReady_Nodes: Seq[BundleBridgeSink[Bool]] = 
       Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeSink[Bool](Some(() => Bool())))
 
-
+  val selectoutNode: Option[Seq[BundleBridgeSource[UInt]]] = if(tileParams.hartId == 0 || tileParams.hartId == 4)
+                                                          Some(Seq.fill(3)(BundleBridgeSource[UInt](Some(() => UInt(16.W)))))
+                                                        else
+                                                          None
+  val NumMasteroutNode: Option[Seq[BundleBridgeSource[UInt]]] = if(tileParams.hartId == 0 || tileParams.hartId == 4)
+                                                              Some(Seq.fill(3)(BundleBridgeSource[UInt](Some(() => UInt(4.W)))))
+                                                           else
+                                                              None
+  val NumSlaveoutNode: Option[Seq[BundleBridgeSource[UInt]]] = if(tileParams.hartId == 0 || tileParams.hartId == 4)
+                                                            Some(Seq.fill(3)(BundleBridgeSource[UInt](Some(() => UInt(4.W)))))
+                                                          else
+                                                            None
+  val MasterIDoutNode: Option[Seq[BundleBridgeSource[UInt]]] = if(tileParams.hartId == 0 || tileParams.hartId == 4)
+                                                              Some(Seq.fill(3)(BundleBridgeSource[UInt](Some(() => UInt(16.W)))))
+                                                            else
+                                                              None 
+  val SlaveIDoutNode: Option[Seq[BundleBridgeSource[UInt]]] = if(tileParams.hartId == 0 || tileParams.hartId == 4)
+                                                              Some(Seq.fill(3)(BundleBridgeSource[UInt](Some(() => UInt(16.W)))))
+                                                            else
+                                                              None                                                                                                                                                                       
   //Slave FIFO Nodes
   val costomSlaveValid_Nodes: Seq[BundleBridgeSink[Bool]] = 
       Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeSink[Bool](Some(() => Bool())))
@@ -246,6 +265,27 @@ abstract class BaseTile private (val crossing: ClockCrossingType, q: Parameters)
 
   val costomSlaveReady_Nodes: Seq[BundleBridgeSource[Bool]] = 
       Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeSource[Bool](Some(() => Bool())))
+
+  val selectinNode: Option[BundleBridgeSink[UInt]] = if(tileParams.hartId != 0 && tileParams.hartId != 4)
+                                                          Some(BundleBridgeSink[UInt](Some(() => UInt(16.W))))
+                                                      else
+                                                          None
+  val NumMasterinNode: Option[BundleBridgeSink[UInt]] = if(tileParams.hartId != 0 && tileParams.hartId != 4)
+                                                              Some(BundleBridgeSink[UInt](Some(() => UInt(4.W))))
+                                                           else
+                                                              None
+  val NumSlaveinNode: Option[BundleBridgeSink[UInt]] = if(tileParams.hartId != 0 && tileParams.hartId != 4)
+                                                            Some(BundleBridgeSink[UInt](Some(() => UInt(4.W))))
+                                                          else
+                                                            None
+  val MasterIDinNode: Option[BundleBridgeSink[UInt]] = if(tileParams.hartId != 0 && tileParams.hartId != 4)
+                                                              Some((BundleBridgeSink[UInt](Some(() => UInt(16.W)))))
+                                                            else
+                                                              None 
+  val SlaveIDinNode: Option[BundleBridgeSink[UInt]] = if(tileParams.hartId != 0 && tileParams.hartId != 4)
+                                                              Some(BundleBridgeSink[UInt](Some(() => UInt(16.W))))
+                                                            else
+                                                              None                                                       
   //costom end
 
   /** Node for broadcasting a hart id to diplomatic consumers within the tile. */
