@@ -158,7 +158,7 @@ class TraceBundle(implicit val p: Parameters) extends Bundle with HasCoreParamet
   val custom = coreParams.traceCustom
 }
 
-trait HasCoreIO extends   {
+trait HasCoreIO extends HasTileParameters {
   implicit val p: Parameters
   def nTotalRoCCCSRs: Int
   val io = new CoreBundle()(p) {
@@ -174,10 +174,18 @@ trait HasCoreIO extends   {
     val bpwatch = Vec(coreParams.nBreakpoints, new BPWatch(coreParams.retireWidth)).asOutput
     val cease = Bool().asOutput
     val wfi = Bool().asOutput
-    val costomout = UInt(32.W).asOutput
     val traceStall = Bool().asInput
-    val costomin = UInt(32.W).asInput
+    val selectionout = UInt(16.W).asOutput
+    val selectionin = UInt(16.W).asInput
     val costom_FIFOin = Flipped(Vec(GlobalParams.Num_Groupcores, Decoupled(GlobalParams.Data_type)))
     val costom_FIFOout = Vec(GlobalParams.Num_Groupcores, Decoupled(GlobalParams.Data_type))
+    val numMasterout = UInt(4.W).asOutput
+    val numMasterin = UInt(4.W).asInput
+    val numSlaveout = UInt(4.W).asOutput
+    val numSlavein = UInt(4.W).asInput
+    val MasterIDout = UInt(16.W).asOutput
+    val MasterIDin = UInt(16.W).asInput
+    val SlaveIDout =  UInt(16.W).asOutput
+    val SlaveIDin = UInt(16.W).asInput
   }
 }
