@@ -14,8 +14,6 @@ import freechips.rocketchip.subsystem.TileCrossingParamsLike
 import freechips.rocketchip.util._
 import freechips.rocketchip.prci.{ClockSinkParameters}
 
-
-
 case class RocketTileBoundaryBufferParams(force: Boolean = false)
 
 case class RocketTileParams(
@@ -118,7 +116,6 @@ class RocketTile private(
     case (Some(RocketTileBoundaryBufferParams(false)), _: RationalCrossing) => TLBuffer(BufferParams.flow, BufferParams.none, BufferParams.none, BufferParams.none, BufferParams.none)
     case _ => TLBuffer(BufferParams.none)
   }
-
 }
 
 class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
@@ -128,10 +125,8 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
   Annotated.params(this, outer.rocketParams)
 
   val core = Module(new Rocket(outer)(outer.p))
-  
+
   //costom start
-
-
   for(i <- 0 until GlobalParams.Num_Groupcores){
     outer.costomMasterBits_Nodes(i).bundle := core.io.costom_FIFOout(i).bits
     outer.costomMasterValid_Nodes(i).bundle := core.io.costom_FIFOout(i).valid
@@ -140,13 +135,27 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
     core.io.costom_FIFOin(i).bits := outer.costomSlaveBits_Nodes(i).bundle
     core.io.costom_FIFOin(i).valid := outer.costomSlaveValid_Nodes(i).bundle
     outer.costomSlaveReady_Nodes(i).bundle := core.io.costom_FIFOin(i).ready
-  }
-  
+  }    
 
+  if(tileParams.hartId == 0 || tileParams.hartId == 4){
+    for(i <- 0 until 3){
+      outer.NumMasteroutNode.get(i).bundle := core.io.numMasterout
+      outer.selectoutNode.get(i).bundle := core.io.selectionout
+      outer.NumSlaveoutNode.get(i).bundle := core.io.numSlaveout
+      outer.MasterIDoutNode.get(i).bundle := core.io.MasterIDout
+      outer.SlaveIDoutNode.get(i).bundle := core.io.SlaveIDout
+    }
     
-  
+  }
+  else{
+    core.io.selectionin := outer.selectinNode.get.bundle
+    core.io.numMasterin := outer.NumMasterinNode.get.bundle
+    core.io.numSlavein := outer.NumSlaveinNode.get.bundle
+    core.io.MasterIDin := outer.MasterIDinNode.get.bundle
+    core.io.SlaveIDin := outer.SlaveIDinNode.get.bundle
+    
+  }
   //costom end
-  
 
   // Report unrecoverable error conditions; for now the only cause is cache ECC errors
   outer.reportHalt(List(outer.dcache.module.io.errors))
