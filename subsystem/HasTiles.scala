@@ -12,7 +12,6 @@ import freechips.rocketchip.tile._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.prci.{ClockGroup, ResetCrossingType, ClockGroupNode}
 import freechips.rocketchip.util._
-import freechips.rocketchip.tile.GlobalParams
 
 /** Entry point for Config-uring the presence of Tiles */
 case class TilesLocated(loc: HierarchicalLocation) extends Field[Seq[CanAttachTile]](Nil)
@@ -240,6 +239,20 @@ trait DefaultTileContextType
   val costomReady_Nodes2 = Seq.fill(GlobalParams.Num_Groupcores)(Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeEphemeralNode[Bool]()))
   val costomValid_Nodes2 = Seq.fill(GlobalParams.Num_Groupcores)(Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeEphemeralNode[Bool]()))
   val costomBits_Nodes2 = Seq.fill(GlobalParams.Num_Groupcores)(Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeEphemeralNode[UInt]()))
+
+  //share data node
+  val selectNode1 = BundleBridgeIdentityNode[UInt]()
+  val NumMasterNode1 = Seq.fill(3)(BundleBridgeEphemeralNode[UInt]())
+  val NumSlaveNode1 = BundleBridgeIdentityNode[UInt]()
+  val MasterIDNode1 = BundleBridgeIdentityNode[UInt]()
+  val SlaveIDNode1 = BundleBridgeIdentityNode[UInt]()
+
+  val selectNode2 = BundleBridgeIdentityNode[UInt]()
+  val NumMasterNode2 = Seq.fill(3)(BundleBridgeEphemeralNode[UInt]())
+  val NumSlaveNode2 = BundleBridgeIdentityNode[UInt]()
+  val MasterIDNode2 = BundleBridgeIdentityNode[UInt]()
+  val SlaveIDNode2 = BundleBridgeIdentityNode[UInt]()
+
   //node end
 } // TODO: ideally this bound would be softened to LazyModule
 
@@ -276,11 +289,50 @@ trait CanAttachTile {
     costomConnect(domain, context)
   }
 
-  
   //costom connect
   def costomConnect(domain: TilePRCIDomain[TileType], context: TileContextType): Unit = {
     implicit val p = context.p
     //Group1 connect
+    if(GlobalParams.List_hartid1.contains(tileParams.hartId)){
+      if(tileParams.hartId == 0){
+        for(i <- 0 until 3){
+          context.selectNode1 := domain.tile.selectoutNode.get(i)
+          context.NumMasterNode1(i) := domain.tile.NumMasteroutNode.get(i)
+          context.NumSlaveNode1 := domain.tile.NumSlaveoutNode.get(i)
+          context.MasterIDNode1 := domain.tile.MasterIDoutNode.get(i)
+          context.SlaveIDNode1 := domain.tile.SlaveIDoutNode.get(i)
+        }
+      }
+      else{
+        domain.tile.selectinNode.get := context.selectNode1
+        domain.tile.NumMasterinNode.get := context.NumMasterNode1(tileParams.hartId - 1)
+        domain.tile.NumSlaveinNode.get := context.NumSlaveNode1
+       
+        domain.tile.MasterIDinNode.get := context.MasterIDNode1
+        domain.tile.SlaveIDinNode.get := context.SlaveIDNode1
+        
+      }
+    }
+    else{
+      if(tileParams.hartId == 4){
+        for(i <- 0 until 3){
+          context.selectNode2 := domain.tile.selectoutNode.get(i)
+          context.NumMasterNode2(i) := domain.tile.NumMasteroutNode.get(i)
+          context.NumSlaveNode2 := domain.tile.NumSlaveoutNode.get(i)
+          context.MasterIDNode2 := domain.tile.MasterIDoutNode.get(i)
+          context.SlaveIDNode2 := domain.tile.SlaveIDoutNode.get(i)
+        }
+      }
+      else{
+        domain.tile.selectinNode.get := context.selectNode2
+        domain.tile.NumMasterinNode.get := context.NumMasterNode2(tileParams.hartId - 5)
+        domain.tile.NumSlaveinNode.get := context.NumSlaveNode2
+       
+        domain.tile.MasterIDinNode.get := context.MasterIDNode2
+        domain.tile.SlaveIDinNode.get := context.SlaveIDNode2
+      }
+    }
+
     for(i <- 0 until GlobalParams.Num_Groupcores){
       if(tileParams.hartId == GlobalParams.List_hartid1(i)){
         for(j <- 0 until GlobalParams.Num_Groupcores){
@@ -311,7 +363,6 @@ trait CanAttachTile {
     }
   }
   //costom connect end
-  
 
   /** Connect the port where the tile is the master to a TileLink interconnect. */
   def connectMasterPorts(domain: TilePRCIDomain[TileType], context: Attachable): Unit = {
