@@ -121,6 +121,7 @@ class RocketCustomCSRs(implicit p: Parameters) extends CustomCSRs with HasRocket
   override def decls = super.decls :+ marchid :+ mvendorid :+ mimpid
 }
 
+//custom Rocc
 class CustomAccelerator(opcodes: OpcodeSet)
     (implicit p: Parameters) extends LazyRoCC(opcodes, 0, false) {
   override lazy val module = new CustomAcceleratorModule(this)
@@ -203,21 +204,6 @@ class CustomAcceleratorModule(outer: CustomAccelerator) extends LazyRoCCModuleIm
     
   io.busy := cmd.valid
   io.interrupt := false.B
-
-  // MEMORY REQUEST INTERFACE
-  /*
-  io.mem.req.valid := cmd.valid
-  io.mem.req.bits.addr := 0.U
-  io.mem.req.bits.tag := 0.U
-  io.mem.req.bits.cmd := M_XRD // perform a load (M_XWR for stores)
-  io.mem.req.bits.size := log2Ceil(8).U
-  io.mem.req.bits.signed := false.B
-  io.mem.req.bits.data := 0.U // we're not performing any stores...
-  io.mem.req.bits.phys := false.B
-  io.mem.req.bits.dprv := cmd.bits.status.dprv
-  io.mem.req.bits.dv := cmd.bits.status.dv
-  */
-
   // The parts of the command are as follows
   // inst - the parts of the instruction itself
   //   opcode
@@ -231,28 +217,26 @@ class CustomAcceleratorModule(outer: CustomAccelerator) extends LazyRoCCModuleIm
   // rs1 - the value of source register 1
   // rs2 - the value of source register 2
 }
+//custom Rocc end
 
 class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     with HasRocketCoreParameters
     with HasCoreIO {
   def nTotalRoCCCSRs = tile.roccCSRs.flatten.size
 
-  //costom start
-  //val roccmodule = Module((LazyModule(new CustomAccelerator(OpcodeSet.custom0)(p))).module)
-  //val rocc_ready = RegInit(roccmodule.io.cmd.ready)
-
+  //custom Module and Reg define
   val FIFO = Module(new SyncFIFO(GlobalParams.Data_type, GlobalParams.depth))
   val otmmux = Module(new otmMux(GlobalParams.Num_Groupcores))
   val mtomux = Module(new mtoMux(GlobalParams.Num_Groupcores))
 
-  val costom_reg = RegInit(44.U(GlobalParams.Data_width.W))
-  val costom_regout = RegInit(1.U(32.W))
-  val costom_regin = RegInit(0.U(32.W))
+  val custom_reg = RegInit(44.U(GlobalParams.Data_width.W))
+  val custom_regout = RegInit(1.U(32.W))
+  val custom_regin = RegInit(0.U(32.W))
   
   val counter = RegInit(0.U(32.W))
 
-  val costom_regbool = RegInit(false.B)
-  val costom_regbool1 = RegInit(false.B)
+  val custom_regbool = RegInit(false.B)
+  val custom_regbool1 = RegInit(true.B)
   
   val HartID1 = VecInit(GlobalParams.List_hartid1.map(_.U))
   val HartID2 = VecInit(GlobalParams.List_hartid2.map(_.U))
@@ -274,6 +258,10 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
                  else
                     RegInit(VecInit((GlobalParams.List_MasterId2 ++ List.fill(GlobalParams.Num_Groupcores - GlobalParams.Num_Mastercores2)(15)).map(_.U)))
 
+
+  val isMaster = MasterID.contains(io.hartid)
+  val isSlave = SlaveID.contains(io.hartid)
+  val MFIFO_full = isMaster && FIFO.io.full
   /*                  
   val NumMaster1 = RegInit(GlobalParams.Num_Mastercores1.U(4.W))
   val NumSlave1 = RegInit(GlobalParams.Num_Slavecores1.U(4.W))
@@ -284,7 +272,6 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val MasterID2 = RegInit(VecInit((GlobalParams.List_MasterId2 ++ List.fill(GlobalParams.Num_Groupcores - GlobalParams.Num_Mastercores2)(15)).map(_.U)))
   val SlaveID2 = RegInit(VecInit((GlobalParams.List_MasterId2 ++ List.fill(GlobalParams.Num_Groupcores - GlobalParams.Num_Mastercores2)(15)).map(_.U)))
   */
-  val num = WireInit(0.U(32.W))
 
   //Mux control signals and assertion
   val reg_sels = if(GlobalParams.List_hartid1.contains(tileParams.hartId))
@@ -308,14 +295,14 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   
 
   //debug singals
-  dontTouch(costom_regbool)
-  dontTouch(costom_regbool1)
+  dontTouch(custom_regbool)
+  dontTouch(custom_regbool1)
   dontTouch(reg_sels)
   dontTouch(reg_slavesels)
-  dontTouch(costom_reg)
-  dontTouch(costom_regin)
-  dontTouch(io.costom_FIFOin)
-  dontTouch(io.costom_FIFOout)
+  dontTouch(custom_reg)
+  dontTouch(custom_regin)
+  dontTouch(io.custom_FIFOin)
+  dontTouch(io.custom_FIFOout)
   dontTouch(counter)
   dontTouch(NumMaster)
   dontTouch(NumSlave)
@@ -331,183 +318,8 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   dontTouch(io.SlaveIDout)
 
   counter := counter + 1.U
-  /*
-  when(counter <= 20.U){
-    //Group1
-    GlobalParams.List_MasterId1 = List(0, 1, 2)
-    GlobalParams.Num_Mastercores1 = GlobalParams.List_MasterId1.length //3
-    GlobalParams.Num_Slavecores1 = GlobalParams.Num_Groupcores - GlobalParams.Num_Mastercores1 //1
-    GlobalParams.List_SlaveId1 = GlobalParams.List_hartid1.filterNot(GlobalParams.List_MasterId1.contains) //(3)
 
-    val Vec_MasterID1 = VecInit((GlobalParams.List_MasterId1 ++ List(6)).map(_.U))
-
-    NumMaster1 := GlobalParams.Num_Mastercores1.U
-    NumSlave1 := GlobalParams.Num_Slavecores1.U
-    for(i <- 0 until GlobalParams.Num_Groupcores){
-      when(i.U < NumMaster1){
-        MasterID1(i) := Vec_MasterID1(i)
-      }.otherwise{
-        MasterID1(i) := 7.U
-      }
-    }
-    
-
-    for(i <- 0 until GlobalParams.Num_Groupcores){
-      if(i < GlobalParams.Num_Slavecores1){
-        SlaveID1(i) := GlobalParams.List_SlaveId1(i).U
-      }
-      else{
-        SlaveID1(i) := 7.U
-      }
-    }
-    //Mux control signals and assertion
-    reg_sels1 := VecInit(Seq(
-      VecInit(false.B, false.B, false.B, true.B),
-      VecInit(false.B, false.B, false.B, false.B),
-      VecInit(false.B, false.B, false.B, false.B),
-      VecInit(false.B, false.B, false.B, false.B)
-      )) 
-    val len1 = reg_sels1(0).length
-    reg_slavesels1 := VecInit((0 until len1).map {i =>
-      Reverse(Cat(reg_sels1.map(_(i))))
-    })
-    for(i <- 0 until GlobalParams.Num_Slavecores1){
-      assert(!(reg_sels1(GlobalParams.List_SlaveId1(i)).reduce(_ || _)))
-      assert(PopCount(reg_slavesels1(GlobalParams.List_SlaveId1(i))) <= 1.U)
-    }
-    for(i <- 0 until GlobalParams.Num_Mastercores1){
-      assert(PopCount(reg_slavesels1(GlobalParams.List_MasterId1(i))) === 0.U)
-    }
-
-    //Gruop2
-    GlobalParams.List_MasterId2 = List(4, 5)
-    GlobalParams.Num_Mastercores2 = GlobalParams.List_MasterId2.length
-    GlobalParams.Num_Slavecores2 = GlobalParams.Num_Groupcores - GlobalParams.Num_Mastercores2
-    GlobalParams.List_SlaveId2 = GlobalParams.List_hartid2.filterNot(GlobalParams.List_MasterId2.contains)
-
-    NumMaster2 := GlobalParams.Num_Mastercores2.U
-    NumSlave2 := GlobalParams.Num_Slavecores2.U
-    for(i <- 0 until GlobalParams.Num_Groupcores){
-      if(i < GlobalParams.Num_Mastercores2){
-        MasterID2(i) := GlobalParams.List_MasterId2(i).U
-      }
-      else{
-        MasterID2(i) := 0.U
-      }
-      if(i < GlobalParams.Num_Slavecores2){
-        SlaveID2(i) := GlobalParams.List_SlaveId2(i).U
-      }
-      else{
-        SlaveID2(i) := 0.U
-      }
-    }
-    //Mux control signals and assertion
-    reg_sels2 := VecInit(Seq(
-      VecInit(false.B, false.B, false.B, true.B),
-      VecInit(false.B, false.B, true.B, false.B),
-      VecInit(false.B, false.B, false.B, false.B),
-      VecInit(false.B, false.B, false.B, false.B)
-    ))
-    val len2 = reg_sels2(0).length
-    reg_slavesels2 := VecInit((0 until len2).map {i =>
-      Reverse(Cat(reg_sels2.map(_(i))))
-    })
-    for(i <- 0 until GlobalParams.Num_Slavecores2){
-      assert(!(reg_sels2(GlobalParams.List_SlaveId2(i) - 4).reduce(_ || _)))
-      assert(PopCount(reg_slavesels2(GlobalParams.List_SlaveId2(i) - 4)) <= 1.U)
-    }
-    for(i <- 0 until GlobalParams.Num_Mastercores2){
-      assert(PopCount(reg_slavesels2(GlobalParams.List_MasterId2(i) - 4)) === 0.U)
-    }
-  }.otherwise{
-    //Group1
-    GlobalParams.List_MasterId1 = List(1, 2)
-    GlobalParams.Num_Mastercores1 = GlobalParams.List_MasterId1.length
-    GlobalParams.Num_Slavecores1 = GlobalParams.Num_Groupcores - GlobalParams.Num_Mastercores1
-    GlobalParams.List_SlaveId1 = GlobalParams.List_hartid1.filterNot(GlobalParams.List_MasterId1.contains)
-
-    NumMaster1 := GlobalParams.Num_Mastercores1.U
-    NumSlave1 := GlobalParams.Num_Slavecores1.U
-    for(i <- 0 until GlobalParams.Num_Groupcores){
-      if(i < GlobalParams.Num_Mastercores1){
-        MasterID1(i) := GlobalParams.List_MasterId1(i).U
-      }
-      else{
-        MasterID1(i) := 7.U
-      }
-    }
-
-    for(i <- 0 until GlobalParams.Num_Groupcores){
-      if(i < GlobalParams.Num_Slavecores1){
-        SlaveID1(i) := GlobalParams.List_SlaveId1(i).U
-      }
-      else{
-        SlaveID1(i) := 7.U
-      }
-    }
-    //Mux control signals and assertion
-    reg_sels1 := VecInit(Seq(
-      VecInit(false.B, false.B, false.B, false.B),
-      VecInit(true.B, false.B, false.B, true.B),
-      VecInit(false.B, false.B, false.B, false.B),
-      VecInit(false.B, false.B, false.B, false.B)
-      )) 
-    val len1 = reg_sels1(0).length
-    reg_slavesels1 := VecInit((0 until len1).map {i =>
-      Reverse(Cat(reg_sels1.map(_(i))))
-    })
-    for(i <- 0 until GlobalParams.Num_Slavecores1){
-      assert(!(reg_sels1(GlobalParams.List_SlaveId1(i)).reduce(_ || _)))
-      assert(PopCount(reg_slavesels1(GlobalParams.List_SlaveId1(i))) <= 1.U)
-    }
-    for(i <- 0 until GlobalParams.Num_Mastercores1){
-      assert(PopCount(reg_slavesels1(GlobalParams.List_MasterId1(i))) === 0.U)
-    }
-
-    //Gruop2
-    GlobalParams.List_MasterId2 = List(4, 6)
-    GlobalParams.Num_Mastercores2 = GlobalParams.List_MasterId2.length
-    GlobalParams.Num_Slavecores2 = GlobalParams.Num_Groupcores - GlobalParams.Num_Mastercores2
-    GlobalParams.List_SlaveId2 = GlobalParams.List_hartid2.filterNot(GlobalParams.List_MasterId2.contains)
-
-    NumMaster2 := GlobalParams.Num_Mastercores2.U
-    NumSlave2 := GlobalParams.Num_Slavecores2.U
-    for(i <- 0 until GlobalParams.Num_Groupcores){
-      if(i < GlobalParams.Num_Mastercores2){
-        MasterID2(i) := GlobalParams.List_MasterId2(i).U
-      }
-      else{
-        MasterID2(i) := 0.U
-      }
-      if(i < GlobalParams.Num_Slavecores2){
-        SlaveID2(i) := GlobalParams.List_SlaveId2(i).U
-      }
-      else{
-        SlaveID2(i) := 0.U
-      }
-    }
-    //Mux control signals and assertion
-    reg_sels2 := VecInit(Seq(
-      VecInit(false.B, false.B, false.B, true.B),
-      VecInit(false.B, false.B, false.B, false.B),
-      VecInit(false.B, true.B, false.B, false.B),
-      VecInit(false.B, false.B, false.B, false.B)
-    ))
-    val len2 = reg_sels2(0).length
-    reg_slavesels2 := VecInit((0 until len2).map {i =>
-      Reverse(Cat(reg_sels2.map(_(i))))
-    })
-    for(i <- 0 until GlobalParams.Num_Slavecores2){
-      assert(!(reg_sels2(GlobalParams.List_SlaveId2(i) - 4).reduce(_ || _)))
-      assert(PopCount(reg_slavesels2(GlobalParams.List_SlaveId2(i) - 4)) <= 1.U)
-    }
-    for(i <- 0 until GlobalParams.Num_Mastercores2){
-      assert(PopCount(reg_slavesels2(GlobalParams.List_MasterId2(i) - 4)) === 0.U)
-    }
-  }
-  */
-
-//costom end
+//custom define end
 
 
   val clock_en_reg = RegInit(true.B)
@@ -1292,7 +1104,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     csr.io.csr_stall ||
     id_reg_pause ||
     io.traceStall
-  ctrl_killd := !ibuf.io.inst(0).valid || ibuf.io.inst(0).bits.replay || take_pc_mem_wb || ctrl_stalld || csr.io.interrupt
+  ctrl_killd := !ibuf.io.inst(0).valid || ibuf.io.inst(0).bits.replay || take_pc_mem_wb || ctrl_stalld || csr.io.interrupt || MFIFO_full
 
   io.imem.req.valid := take_pc
   io.imem.req.bits.speculative := !take_pc_wb
@@ -1376,11 +1188,66 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val NumID = RegInit(VecInit(Seq.fill(2)(0.U(4.W))))
   val tempID = RegInit(VecInit(Seq.fill(GlobalParams.Num_Groupcores)(15.U(4.W))))
   when(io.rocc.cmd.valid && io.rocc.cmd.bits.inst.funct === 1.U){
-      costom_regbool := io.rocc.cmd.bits.rs1(0).asBool
+      custom_regbool := io.rocc.cmd.bits.rs1(0).asBool
     }
   when(io.rocc.cmd.valid && io.rocc.cmd.bits.inst.funct === 2.U){
-    costom_regbool1 := io.rocc.cmd.bits.rs1(0).asBool
+    custom_regbool1 := io.rocc.cmd.bits.rs1(0).asBool
   }
+
+  when(HartID1.contains(io.hartid)){
+    when(io.rocc.cmd.valid && io.rocc.cmd.bits.inst.funct === 4.U){
+      NumMaster := io.rocc.cmd.bits.rs1(3, 0)
+      NumSlave := GlobalParams.Num_Groupcores.U - io.rocc.cmd.bits.rs1(3, 0)
+      tempID := VecInit(Seq.tabulate(GlobalParams.Num_Groupcores){i => io.rocc.cmd.bits.rs2(4 * (i + 1) - 1, 4 * i)})
+    }
+    val nexttempID = RegNext(RegNext(tempID, VecInit(Seq.fill(GlobalParams.Num_Groupcores)(15.U(4.W)))))
+    
+    val resp_funct = RegNext(RegNext(RegNext(io.rocc.cmd.bits.inst.funct)))
+    
+    when(io.rocc.resp.valid && resp_funct === 4.U){
+      for(i <- 0 until GlobalParams.Num_Groupcores){
+        when(i.U < NumMaster){
+          MasterID(i) := nexttempID(GlobalParams.Num_Groupcores - i - 1)
+          SlaveID(i) := 15.U
+        }.otherwise{
+          MasterID(i) := 15.U
+          SlaveID(i) := nexttempID(GlobalParams.Num_Groupcores - i - 1)
+        }
+      }
+      reg_sels := VecInit((VecInit(Seq.tabulate(GlobalParams.Num_Groupcores){i => io.rocc.resp.bits.data(4 * (i + 1) - 1, 4 * i)})).map(k => VecInit(k.asBools)))
+      reg_slavesels := VecInit((0 until 4).map {i =>
+      Reverse(Cat(VecInit(((VecInit(Seq.tabulate(GlobalParams.Num_Groupcores){i => io.rocc.resp.bits.data(4 * (i + 1) - 1, 4 * i)})).map(k => VecInit(k.asBools)))).map(_(i))))
+      })
+    }
+  }.otherwise{
+    when(io.rocc.cmd.valid && io.rocc.cmd.bits.inst.funct === 4.U){
+      NumMaster := io.rocc.cmd.bits.rs1(7, 4)
+      NumSlave := GlobalParams.Num_Groupcores.U - io.rocc.cmd.bits.rs1(7, 4)
+      tempID := VecInit(Seq.tabulate(GlobalParams.Num_Groupcores){i => io.rocc.cmd.bits.rs2(4 * (i + 5) - 1, 4 * (i + 4))})
+    }
+    val nexttempID = RegNext(RegNext(tempID, VecInit(Seq.fill(GlobalParams.Num_Groupcores)(15.U(4.W)))))
+    
+    val resp_funct = RegNext(RegNext(RegNext(io.rocc.cmd.bits.inst.funct)))
+    
+    when(io.rocc.resp.valid && resp_funct === 4.U){
+      for(i <- 0 until GlobalParams.Num_Groupcores){
+        when(i.U < NumMaster){
+          MasterID(i) := nexttempID(GlobalParams.Num_Groupcores - i - 1)
+          SlaveID(i) := 15.U
+        }.otherwise{
+          MasterID(i) := 15.U
+          SlaveID(i) := nexttempID(GlobalParams.Num_Groupcores - i - 1)
+        }
+      }
+      reg_sels := VecInit((VecInit(Seq.tabulate(GlobalParams.Num_Groupcores){i => io.rocc.resp.bits.data(4 * (i + 5) - 1, 4 * (i + 4))})).map(k => VecInit(k.asBools)))
+      reg_slavesels := VecInit((0 until 4).map {i =>
+      Reverse(Cat(VecInit(((VecInit(Seq.tabulate(GlobalParams.Num_Groupcores){i => io.rocc.resp.bits.data(4 * (i + 5) - 1, 4 * (i + 4))})).map(k => VecInit(k.asBools)))).map(_(i))))
+      })
+    }
+  }
+  
+  //Hardware to synchronize ID and selection registers
+  /* 
   when(io.hartid === 0.U){
     when(io.rocc.cmd.valid && io.rocc.cmd.bits.inst.funct === 4.U){
       NumID := VecInit(Seq.tabulate(2){i => io.rocc.cmd.bits.rs1(4 * (i + 1) - 1, 4 * i)})
@@ -1455,18 +1322,16 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     Reverse(Cat(VecInit(((VecInit(Seq.tabulate(GlobalParams.Num_Groupcores){
                           i => io.selectionin(4 * (i + 1) - 1, 4 * i)})).map(k => VecInit(k.asBools)))).map(_(i))))})
   }
-  
-
-    
-
+  */
+  //FIFO connect
   when(HartID1.contains(io.hartid)){
     when(MasterID.contains(io.hartid)){
-      FIFO.io.in.bits := costom_reg
-      FIFO.io.in.valid := costom_regbool
+      FIFO.io.in.bits := custom_reg
+      FIFO.io.in.valid := custom_regbool
       FIFO.io.out <> otmmux.io.in
-      io.costom_FIFOout <> otmmux.io.out
+      io.custom_FIFOout <> otmmux.io.out
       otmmux.io.sels := reg_sels(io.hartid)
-      costom_reg := costom_reg + io.hartid + 1.U
+      custom_reg := custom_reg + io.hartid + 1.U
 
       mtomux.io.out.ready := false.B
       for(i <- 0 until GlobalParams.Num_Groupcores){
@@ -1475,10 +1340,10 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
         mtomux.io.sels(i) := false.B
     }
   }.otherwise{
-    io.costom_FIFOin <> mtomux.io.in
+    io.custom_FIFOin <> mtomux.io.in
     mtomux.io.out <> FIFO.io.in
     mtomux.io.sels := reg_slavesels(io.hartid).asBools
-    FIFO.io.out.ready := costom_regbool1
+    FIFO.io.out.ready := custom_regbool1
 
     otmmux.io.in.valid := false.B
     otmmux.io.in.bits := 0.U
@@ -1489,12 +1354,12 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   }
 }.otherwise{
   when(MasterID.contains(io.hartid)){
-    FIFO.io.in.bits := costom_reg
-    FIFO.io.in.valid := costom_regbool
+    FIFO.io.in.bits := custom_reg
+    FIFO.io.in.valid := custom_regbool
     FIFO.io.out <> otmmux.io.in
-    io.costom_FIFOout <> otmmux.io.out
+    io.custom_FIFOout <> otmmux.io.out
     otmmux.io.sels := reg_sels(io.hartid - 4.U)
-    costom_reg := costom_reg + io.hartid + 2.U
+    custom_reg := custom_reg + io.hartid + 2.U
 
     mtomux.io.out.ready := false.B
     for(i <- 0 until GlobalParams.Num_Groupcores){
@@ -1503,10 +1368,10 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
       mtomux.io.sels(i) := false.B
     }
   }.otherwise{
-    io.costom_FIFOin <> mtomux.io.in
+    io.custom_FIFOin <> mtomux.io.in
     mtomux.io.out <> FIFO.io.in
     mtomux.io.sels := reg_slavesels(io.hartid - 4.U).asBools
-    FIFO.io.out.ready := costom_regbool1
+    FIFO.io.out.ready := custom_regbool1
 
     otmmux.io.in.valid := false.B
     otmmux.io.in.bits := 0.U
@@ -1537,20 +1402,6 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   }
   */
 
-       
-
-   
-  
-  //costom rocc 
-  /*
-  roccmodule.io.cmd.valid := wb_reg_valid && wb_ctrl.rocc
-  roccmodule.io.exception := wb_xcpt && csr.io.status.xs.orR
-  roccmodule.io.csrs := csr.io.roccCSRs
-  roccmodule.io.cmd.bits.status := csr.io.status
-  roccmodule.io.cmd.bits.inst := wb_reg_inst.asTypeOf(new RoCCInstruction())
-  roccmodule.io.cmd.bits.rs1 := wb_reg_wdata
-  roccmodule.io.cmd.bits.rs2 := wb_reg_rs2
-  */
 
   // gate the clock
   val unpause = csr.io.time(rocketParams.lgPauseCycles-1, 0) === 0.U || csr.io.inhibit_cycle || io.dmem.perf.release || take_pc
@@ -1662,6 +1513,31 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     name = "max_core_cycles",
     docstring = "Kill the emulation after INT rdtime cycles. Off if 0."
   )(csr.io.time)
+
+  //MyCustomS
+  val log_valid = csr.io.trace(0).valid
+  val log_mem = wb_ctrl.mem
+  val log_mem_cmd = wb_ctrl.mem_cmd
+
+  val log_imm = ImmGen(wb_ctrl.sel_imm, wb_reg_inst)
+  val log_rs0 = coreMonitorBundle.rd0val
+  val log_rs1 = Mux(wb_ctrl.rfs2, Mux(wb_ctrl.dp, io.fpu.store_data, Cat(0.U, io.fpu.store_data(31,0))), coreMonitorBundle.rd1val)
+  val log_rd = Mux(wb_ctrl.wfd, io.fpu.dmem_resp_data, Mux(coreMonitorBundle.wrenx, coreMonitorBundle.wrdata, 0.U))
+  val amo_is_w = coreMonitorBundle.inst(14,12) === "b010".U
+  val amo_is_d = coreMonitorBundle.inst(14,12) === "b011".U
+
+  val my_log_unit = Module(new LogUnit)
+  my_log_unit.io.valid      := log_valid
+  my_log_unit.io.mem        := log_mem
+  my_log_unit.io.mem_cmd    := log_mem_cmd
+  my_log_unit.io.imm        := log_imm
+  my_log_unit.io.rs0        := log_rs0
+  my_log_unit.io.rs1        := log_rs1
+  my_log_unit.io.rd         := log_rd
+  my_log_unit.io.lhs        := 0.U  //Mux(amo_is_w, io.dmem.log_io.amo_lhs >> 32, Mux(amo_is_w, io.dmem.log_io.amo_lhs >> 32, 0.U))
+  my_log_unit.io.rhs        := 0.U  //Mux(amo_is_w, io.dmem.log_io.amo_rhs >> 32, Mux(amo_is_w, io.dmem.log_io.amo_rhs >> 32, 0.U))
+  my_log_unit.io.out        := 0.U  //Mux(amo_is_w, io.dmem.log_io.amo_out >> 32, Mux(amo_is_w, io.dmem.log_io.amo_out >> 32, 0.U))
+  //MyCustomE
 
   } // leaving gated-clock domain
   val rocketImpl = withClock (gated_clock) { new RocketImpl }
