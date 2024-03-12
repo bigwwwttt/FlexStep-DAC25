@@ -128,15 +128,16 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
 
   //costom start
   for(i <- 0 until GlobalParams.Num_Groupcores){
-    outer.costomMasterBits_Nodes(i).bundle := core.io.costom_FIFOout(i).bits
-    outer.costomMasterValid_Nodes(i).bundle := core.io.costom_FIFOout(i).valid
-    core.io.costom_FIFOout(i).ready := outer.costomMasterReady_Nodes(i).bundle
+    outer.costomMasterBits_Nodes(i).bundle := core.io.custom_FIFOout(i).bits
+    outer.costomMasterValid_Nodes(i).bundle := core.io.custom_FIFOout(i).valid
+    core.io.custom_FIFOout(i).ready := outer.costomMasterReady_Nodes(i).bundle
 
-    core.io.costom_FIFOin(i).bits := outer.costomSlaveBits_Nodes(i).bundle
-    core.io.costom_FIFOin(i).valid := outer.costomSlaveValid_Nodes(i).bundle
-    outer.costomSlaveReady_Nodes(i).bundle := core.io.costom_FIFOin(i).ready
+    core.io.custom_FIFOin(i).bits := outer.costomSlaveBits_Nodes(i).bundle
+    core.io.custom_FIFOin(i).valid := outer.costomSlaveValid_Nodes(i).bundle
+    outer.costomSlaveReady_Nodes(i).bundle := core.io.custom_FIFOin(i).ready
   }    
 
+  /*
   if(tileParams.hartId == 0 || tileParams.hartId == 4){
     for(i <- 0 until 3){
       outer.NumMasteroutNode.get(i).bundle := core.io.numMasterout
@@ -155,6 +156,7 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
     core.io.SlaveIDin := outer.SlaveIDinNode.get.bundle
     
   }
+  */
   //costom end
 
   // Report unrecoverable error conditions; for now the only cause is cache ECC errors
