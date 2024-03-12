@@ -293,6 +293,7 @@ trait CanAttachTile {
   def costomConnect(domain: TilePRCIDomain[TileType], context: TileContextType): Unit = {
     implicit val p = context.p
     //Group1 connect
+    /*
     if(GlobalParams.List_hartid1.contains(tileParams.hartId)){
       if(tileParams.hartId == 0){
         for(i <- 0 until 3){
@@ -332,6 +333,7 @@ trait CanAttachTile {
         domain.tile.SlaveIDinNode.get := context.SlaveIDNode2
       }
     }
+    */
 
     for(i <- 0 until GlobalParams.Num_Groupcores){
       if(tileParams.hartId == GlobalParams.List_hartid1(i)){
