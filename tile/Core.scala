@@ -177,8 +177,8 @@ trait HasCoreIO extends HasTileParameters {
     val traceStall = Bool().asInput
     val selectionout = UInt(16.W).asOutput
     val selectionin = UInt(16.W).asInput
-    val costom_FIFOin = Flipped(Vec(GlobalParams.Num_Groupcores, Decoupled(GlobalParams.Data_type)))
-    val costom_FIFOout = Vec(GlobalParams.Num_Groupcores, Decoupled(GlobalParams.Data_type))
+    val custom_FIFOin = Flipped(Vec(GlobalParams.Num_Groupcores, Decoupled(GlobalParams.Data_type)))
+    val custom_FIFOout = Vec(GlobalParams.Num_Groupcores, Decoupled(GlobalParams.Data_type))
     val numMasterout = UInt(4.W).asOutput
     val numMasterin = UInt(4.W).asInput
     val numSlaveout = UInt(4.W).asOutput
