@@ -22,6 +22,11 @@ class HellaCacheArbiter(n: Int)(implicit p: Parameters) extends Module
 
     io.mem.keep_clock_enabled := io.requestor.map(_.keep_clock_enabled).reduce(_||_)
 
+    //custom
+    io.mem.log_io <> io.requestor(0).log_io
+    io.mem.log_io <> io.requestor(1).log_io
+    io.mem.log_io <> io.requestor(2).log_io
+
     io.mem.req.valid := io.requestor.map(_.req.valid).reduce(_||_)
     io.requestor(0).req.ready := io.mem.req.ready
     for (i <- 1 until n)
