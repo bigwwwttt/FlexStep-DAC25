@@ -9,3 +9,5 @@
      The sels singals are controlled by reg_sels at class Roctet(generators/rocket-chip/src/main/scala/rocket/RocketCore.scala)
 
      Update at 2024.3.4：Added custom instruction for changing the number and ID of Master core
+
+     Subsequent updates will be described during commit
