@@ -10,7 +10,7 @@ import freechips.rocketchip.amba._
 import org.chipsalliance.cde.config.{Parameters, Field}
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tile._
-import freechips.rocketchip.tilelink._
+import freechips.rocketchip.tilelink._                                                                                   
 import freechips.rocketchip.util._
 import scala.collection.mutable.ListBuffer
 
@@ -161,9 +161,15 @@ class HellaCachePerfEvents extends Bundle {
   val storeBufferEmptyAfterLoad = Bool()
   val storeBufferEmptyAfterStore = Bool()
 }
-
+//custom log_io
+class log_io(implicit p: Parameters) extends CoreBundle()(p){
+  val amo_lhs = Input(UInt(64.W))
+  val amo_rhs = Input(UInt(64.W))
+  val amo_out = Input(UInt(64.W))
+}
 // interface between D$ and processor/DTLB
 class HellaCacheIO(implicit p: Parameters) extends CoreBundle()(p) {
+  val log_io = new log_io //custom log_io
   val req = Decoupled(new HellaCacheReq)
   val s1_kill = Output(Bool()) // kill previous cycle's req
   val s1_data = Output(new HellaCacheWriteData()) // data for previous cycle's req
