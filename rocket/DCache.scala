@@ -966,6 +966,10 @@ class DCacheModule(outer: DCache) extends HellaCacheModule(outer) {
       val mask = FillInterleaved(8, Mux(s2_correct, 0.U, pstore1_mask))
       amoalus.map(_.io.out_unmasked).asUInt & mask | s2_data_word_corrected & ~mask
     })
+
+    io.cpu.log_io.amo_lhs := s2_data_word
+    io.cpu.log_io.amo_rhs := pstore1_data
+    io.cpu.log_io.amo_out := amoalus(0).io.out
   } else if (!usingAtomics) {
     assert(!(s1_valid_masked && s1_read && s1_write), "unsupported D$ operation")
   }
@@ -979,6 +983,7 @@ class DCacheModule(outer: DCache) extends HellaCacheModule(outer) {
     }
   }
 
+  
   // flushes
   if (!usingDataScratchpad)
     when (RegNext(reset.asBool)) { resetting := true.B }
