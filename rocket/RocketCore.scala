@@ -234,12 +234,17 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val custom_regin = RegInit(0.U(32.W))
   
   val counter = RegInit(0.U(32.W))
+  
+  
+  val jump_pc = RegInit(0.U(64.W))
 
   val custom_regbool = RegInit(false.B)
   val custom_regbool1 = RegInit(true.B)
   
   val HartID1 = VecInit(GlobalParams.List_hartid1.map(_.U))
   val HartID2 = VecInit(GlobalParams.List_hartid2.map(_.U))
+  dontTouch(HartID1)
+  dontTouch(HartID2)
 
   val NumMaster = if(GlobalParams.List_hartid1.contains(tileParams.hartId)) 
                     RegInit(GlobalParams.Num_Mastercores1.U(4.W))
@@ -256,12 +261,18 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val SlaveID = if(GlobalParams.List_hartid1.contains(tileParams.hartId)) 
                     RegInit(VecInit((GlobalParams.List_SlaveId1 ++ List.fill(GlobalParams.Num_Groupcores - GlobalParams.Num_Slavecores1)(15)).map(_.U)))
                  else
-                    RegInit(VecInit((GlobalParams.List_MasterId2 ++ List.fill(GlobalParams.Num_Groupcores - GlobalParams.Num_Mastercores2)(15)).map(_.U)))
+                    RegInit(VecInit((GlobalParams.List_SlaveId2 ++ List.fill(GlobalParams.Num_Groupcores - GlobalParams.Num_Slavecores2)(15)).map(_.U)))
 
 
+  val isGruop1 = HartID1.contains(io.hartid)
+  val isGruop2 = HartID2.contains(io.hartid)
   val isMaster = MasterID.contains(io.hartid)
   val isSlave = SlaveID.contains(io.hartid)
   val MFIFO_full = isMaster && FIFO.io.full
+  dontTouch(isGruop1)
+  dontTouch(isGruop2)
+  dontTouch(isMaster)
+  dontTouch(isSlave)
   /*                  
   val NumMaster1 = RegInit(GlobalParams.Num_Mastercores1.U(4.W))
   val NumSlave1 = RegInit(GlobalParams.Num_Slavecores1.U(4.W))
@@ -592,6 +603,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     if (fastLoadByte) io.dmem.resp.bits.data(xLen-1, 0)
     else if (fastLoadWord) io.dmem.resp.bits.data_word_bypass(xLen-1, 0)
     else wb_reg_wdata
+  dontTouch(dcache_bypass_data)
 
   // detect bypass opportunities
   val ex_waddr = ex_reg_inst(11,7) & regAddrMask.U
@@ -784,12 +796,16 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     Mux(mem_ctrl.branch && mem_br_taken, ImmGen(IMM_SB, mem_reg_inst),
     Mux(mem_ctrl.jal, ImmGen(IMM_UJ, mem_reg_inst),
     Mux(mem_reg_rvc, 2.S, 4.S)))
+    dontTouch(mem_br_target)
+  //Calculate next-pc, including the jalr instruction
   val mem_npc = (Mux(mem_ctrl.jalr || mem_reg_sfence, encodeVirtualAddress(mem_reg_wdata, mem_reg_wdata).asSInt, mem_br_target) & (-2).S).asUInt
+  dontTouch(mem_npc)
   val mem_wrong_npc =
     Mux(ex_pc_valid, mem_npc =/= ex_reg_pc,
     Mux(ibuf.io.inst(0).valid || ibuf.io.imem.valid, mem_npc =/= ibuf.io.pc, true.B))
   val mem_npc_misaligned = !csr.io.status.isa('c'-'a') && mem_npc(1) && !mem_reg_sfence
   val mem_int_wdata = Mux(!mem_reg_xcpt && (mem_ctrl.jalr ^ mem_npc_misaligned), mem_br_target, mem_reg_wdata.asSInt).asUInt
+  dontTouch(mem_int_wdata)
   val mem_cfi = mem_ctrl.branch || mem_ctrl.jalr || mem_ctrl.jal
   val mem_cfi_taken = (mem_ctrl.branch && mem_br_taken) || mem_ctrl.jalr || mem_ctrl.jal
   val mem_direction_misprediction = mem_ctrl.branch && mem_br_taken =/= (usingBTB.B && mem_reg_btb_resp.taken)
@@ -824,15 +840,28 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     mem_reg_mem_size := ex_reg_mem_size
     mem_reg_hls_or_dv := io.dmem.req.bits.dv
     mem_reg_pc := ex_reg_pc
-    // IDecode ensured they are 1H
-    mem_reg_wdata := Mux1H(Seq(
-      ex_scie_unpipelined -> ex_scie_unpipelined_wdata,
-      ex_ctrl.zbk         -> ex_zbk_wdata,
-      ex_ctrl.zkn         -> ex_zkn_wdata,
-      ex_ctrl.zks         -> ex_zks_wdata,
-      (!ex_scie_unpipelined && !ex_ctrl.zbk && !ex_ctrl.zkn && !ex_ctrl.zks)
-                          -> alu.io.out,
-    ))
+    // IDecode ensured they are 1H  
+    when(isMaster){
+      mem_reg_wdata := Mux1H(Seq(
+                            ex_scie_unpipelined -> ex_scie_unpipelined_wdata,
+                            ex_ctrl.zbk         -> ex_zbk_wdata,
+                            ex_ctrl.zkn         -> ex_zkn_wdata,
+                            ex_ctrl.zks         -> ex_zks_wdata,
+                            (!ex_scie_unpipelined && !ex_ctrl.zbk && !ex_ctrl.zkn && !ex_ctrl.zks)
+                                                -> alu.io.out,
+      ))
+    }.otherwise{
+      mem_reg_wdata := Mux((ex_ctrl.jalr && ex_reg_inst(12) === 1.U), jump_pc, 
+                        Mux1H(Seq(
+                            ex_scie_unpipelined -> ex_scie_unpipelined_wdata,
+                            ex_ctrl.zbk         -> ex_zbk_wdata,
+                            ex_ctrl.zkn         -> ex_zkn_wdata,
+                            ex_ctrl.zks         -> ex_zks_wdata,
+                            (!ex_scie_unpipelined && !ex_ctrl.zbk && !ex_ctrl.zkn && !ex_ctrl.zks)
+                                                -> alu.io.out,
+      )))
+    }
+    
     mem_br_taken := alu.io.cmp_out
 
     when (ex_ctrl.rxs2 && (ex_ctrl.mem || ex_ctrl.rocc || ex_sfence)) {
@@ -1182,7 +1211,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   io.rocc.cmd.bits.status := csr.io.status
   io.rocc.cmd.bits.inst := wb_reg_inst.asTypeOf(new RoCCInstruction())
   io.rocc.cmd.bits.rs1 := wb_reg_wdata
-  io.rocc.cmd.bits.rs2 := wb_reg_rs2
+  io.rocc.cmd.bits.rs2 := wb_reg_rs2                                   
 
   //rocc.resp.data
   val NumID = RegInit(VecInit(Seq.fill(2)(0.U(4.W))))
@@ -1324,26 +1353,27 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   }
   */
   //FIFO connect
-  when(HartID1.contains(io.hartid)){
-    when(MasterID.contains(io.hartid)){
-      FIFO.io.in.bits := custom_reg
-      FIFO.io.in.valid := custom_regbool
-      FIFO.io.out <> otmmux.io.in
-      io.custom_FIFOout <> otmmux.io.out
-      otmmux.io.sels := reg_sels(io.hartid)
-      custom_reg := custom_reg + io.hartid + 1.U
-
-      mtomux.io.out.ready := false.B
-      for(i <- 0 until GlobalParams.Num_Groupcores){
-        mtomux.io.in(i).bits := 0.U
-        mtomux.io.in(i).valid := false.B
-        mtomux.io.sels(i) := false.B
+when(isGruop1){
+  when(isMaster){
+    FIFO.io.in.bits := ex_reg_pc
+    FIFO.io.in.valid := custom_regbool
+    FIFO.io.out <> otmmux.io.in
+    io.custom_FIFOout <> otmmux.io.out
+    otmmux.io.sels := reg_sels(io.hartid)
+    custom_reg := custom_reg + io.hartid + 1.U
+    mtomux.io.out.ready := false.B
+    for(i <- 0 until GlobalParams.Num_Groupcores){
+      mtomux.io.in(i).bits := 0.U
+      mtomux.io.in(i).valid := false.B
+      mtomux.io.sels(i) := false.B
     }
   }.otherwise{
     io.custom_FIFOin <> mtomux.io.in
     mtomux.io.out <> FIFO.io.in
     mtomux.io.sels := reg_slavesels(io.hartid).asBools
     FIFO.io.out.ready := custom_regbool1
+
+    jump_pc := FIFO.io.out.bits
 
     otmmux.io.in.valid := false.B
     otmmux.io.in.bits := 0.U
@@ -1353,7 +1383,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     }
   }
 }.otherwise{
-  when(MasterID.contains(io.hartid)){
+  when(isMaster){
     FIFO.io.in.bits := custom_reg
     FIFO.io.in.valid := custom_regbool
     FIFO.io.out <> otmmux.io.in
@@ -1534,9 +1564,9 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   my_log_unit.io.rs0        := log_rs0
   my_log_unit.io.rs1        := log_rs1
   my_log_unit.io.rd         := log_rd
-  my_log_unit.io.lhs        := 0.U  //Mux(amo_is_w, io.dmem.log_io.amo_lhs >> 32, Mux(amo_is_w, io.dmem.log_io.amo_lhs >> 32, 0.U))
-  my_log_unit.io.rhs        := 0.U  //Mux(amo_is_w, io.dmem.log_io.amo_rhs >> 32, Mux(amo_is_w, io.dmem.log_io.amo_rhs >> 32, 0.U))
-  my_log_unit.io.out        := 0.U  //Mux(amo_is_w, io.dmem.log_io.amo_out >> 32, Mux(amo_is_w, io.dmem.log_io.amo_out >> 32, 0.U))
+  my_log_unit.io.lhs        := Mux(amo_is_w, io.dmem.log_io.amo_lhs >> 32, Mux(amo_is_w, io.dmem.log_io.amo_lhs >> 32, 0.U))
+  my_log_unit.io.rhs        := Mux(amo_is_w, io.dmem.log_io.amo_rhs >> 32, Mux(amo_is_w, io.dmem.log_io.amo_rhs >> 32, 0.U))
+  my_log_unit.io.out        := Mux(amo_is_w, io.dmem.log_io.amo_out >> 32, Mux(amo_is_w, io.dmem.log_io.amo_out >> 32, 0.U))
   //MyCustomE
 
   } // leaving gated-clock domain
