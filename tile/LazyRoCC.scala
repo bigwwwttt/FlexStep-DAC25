@@ -46,6 +46,9 @@ class RoCCCoreIO(val nRoCCCSRs: Int = 0)(implicit p: Parameters) extends CoreBun
   val interrupt = Output(Bool())
   val exception = Input(Bool())
   val csrs = Input(Vec(nRoCCCSRs, new CustomCSRIO))
+  //custom IO
+  val score_rece_done = Input(Bool())
+  val mcore_runing = Input(Bool())
 }
 
 class RoCCIO(val nPTWPorts: Int, nRoCCCSRs: Int)(implicit p: Parameters) extends RoCCCoreIO(nRoCCCSRs)(p) {
@@ -94,6 +97,8 @@ trait HasLazyRoCCModule extends CanHavePTWModule
     outer.roccs.zipWithIndex.foreach { case (rocc, i) =>
       rocc.module.io.ptw ++=: ptwPorts
       rocc.module.io.cmd <> cmdRouter.io.out(i)
+      rocc.module.io.score_rece_done := cmdRouter.io.score_cdone_output
+      rocc.module.io.mcore_runing := cmdRouter.io.mcore_running_output
       val dcIF = Module(new SimpleHellaCacheIF()(outer.p))
       dcIF.io.requestor <> rocc.module.io.mem
       dcachePorts += dcIF.io.cache
@@ -410,6 +415,12 @@ class RoccCommandRouter(opcodes: Seq[OpcodeSet])(implicit p: Parameters)
     val in = Flipped(Decoupled(new RoCCCommand))
     val out = Vec(opcodes.size, Decoupled(new RoCCCommand))
     val busy = Output(Bool())
+
+    val score_cdone_input = Input(Bool())
+    val score_cdone_output = Output(Bool())
+
+    val mcore_running_input = Input(Bool())
+    val mcore_running_output = Output(Bool())
   }
 
   val cmd = Queue(io.in)
@@ -421,6 +432,9 @@ class RoccCommandRouter(opcodes: Seq[OpcodeSet])(implicit p: Parameters)
   }
   cmd.ready := cmdReadys.reduce(_ || _)
   io.busy := cmd.valid
+
+  io.score_cdone_output := io.score_cdone_input
+  io.mcore_running_output := io.mcore_running_input
 
   assert(PopCount(cmdReadys) <= 1.U,
     "Custom opcode matched for more than one accelerator")
