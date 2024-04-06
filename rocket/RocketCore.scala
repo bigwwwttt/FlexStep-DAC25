@@ -15,6 +15,8 @@ import scala.collection.mutable.ArrayBuffer
 import freechips.rocketchip.diplomacy.LazyModule
 import org.yaml.snakeyaml.events.Event.ID
 
+import freechips.rocketchip.snapshot._
+
 case class RocketCoreParams(
   bootFreqHz: BigInt = 0,
   useVM: Boolean = true,
@@ -121,104 +123,6 @@ class RocketCustomCSRs(implicit p: Parameters) extends CustomCSRs with HasRocket
   override def decls = super.decls :+ marchid :+ mvendorid :+ mimpid
 }
 
-//custom Rocc
-class CustomAccelerator(opcodes: OpcodeSet)
-    (implicit p: Parameters) extends LazyRoCC(opcodes, 0, false) {
-  override lazy val module = new CustomAcceleratorModule(this)
-}
-
-class CustomAcceleratorModule(outer: CustomAccelerator) extends LazyRoCCModuleImp(outer) 
-    with HasCoreParameters {
-  val cmd = Queue(io.cmd)
-  val funt = cmd.bits.inst.funct
-  val write = funt === 0.U
-  val dochange = funt === 4.U
-  val Num_Mastercores1 = cmd.bits.rs1(3, 0)
-  val Num_Slavecores1 = GlobalParams.Num_Groupcores.U - Num_Mastercores1
-  val Num_Mastercores2 = cmd.bits.rs1(7, 4)
-  val Num_Slavecores2 = GlobalParams.Num_Groupcores.U - Num_Mastercores2
-  val HartId1 = VecInit(Seq.tabulate(GlobalParams.Num_Groupcores){ i => cmd.bits.rs2(4 * (i + 1) - 1, 4 * i) })
-  val HartId2 = VecInit(Seq.tabulate(GlobalParams.Num_Groupcores){ i => cmd.bits.rs2(4 * (i + 5) - 1, 4 * (i + 4)) })
-  val sels = 0.U(xLen.W)
-  val sels1 = VecInit(Seq.tabulate(GlobalParams.Num_Groupcores){ i => sels(4 * (i + 1) - 1, 4 * i)})
-  val sels2 = VecInit(Seq.tabulate(GlobalParams.Num_Groupcores){ i => sels(4 * (i + 5) - 1, 4 * (i + 4))})
-  val finalsels1 = WireInit(VecInit(sels1.map{ elem =>
-    VecInit((0 until elem.getWidth).map(i => elem(i).asUInt))
-  }))
-  val finalsels2 = WireInit(VecInit(sels2.map{ elem =>
-    VecInit((0 until elem.getWidth).map(i => elem(i).asUInt))
-  }))
-
-  when(write){
-    io.resp.bits.data := 3.U
-  }
-  when(dochange){
-    for(i <- 0 until GlobalParams.Num_Groupcores){
-      when(i.U < Num_Mastercores1){
-        when(i.U < Num_Slavecores1){
-          for(j <- 0 until GlobalParams.Num_Groupcores){
-            when(j.U === HartId1(i)){
-              finalsels1(HartId1(GlobalParams.Num_Groupcores - i - 1))(j) := 1.U
-            }.otherwise{
-              finalsels1(HartId1(GlobalParams.Num_Groupcores - i - 1))(j) := 0.U
-            }
-          }
-        }.otherwise{
-          for(j <- 0 until GlobalParams.Num_Groupcores){
-            finalsels1(HartId1(GlobalParams.Num_Groupcores - i - 1))(j) := 0.U
-          }                                                                          
-        }
-      }.otherwise{
-        for(j <- 0 until GlobalParams.Num_Groupcores){
-            finalsels1(HartId1(GlobalParams.Num_Groupcores - i - 1))(j) := 0.U
-        }  
-      }
-
-      when(i.U < Num_Mastercores2){
-        when(i.U < Num_Slavecores2){
-          for(j <- 0 until GlobalParams.Num_Groupcores){
-            when(j.U === HartId2(i) - 4.U){
-              finalsels2(HartId2(GlobalParams.Num_Groupcores - i - 1) - 4.U)(j) := 1.U
-            }.otherwise{
-              finalsels2(HartId2(GlobalParams.Num_Groupcores - i - 1) - 4.U)(j) := 0.U
-            }
-          }
-        }.otherwise{
-          for(j <- 0 until GlobalParams.Num_Groupcores){
-            finalsels2(HartId2(GlobalParams.Num_Groupcores - i - 1) - 4.U)(j) := 0.U
-          }
-        }
-      }.otherwise{
-        for(j <- 0 until GlobalParams.Num_Groupcores){
-            finalsels2(HartId2(GlobalParams.Num_Groupcores - i - 1) - 4.U)(j) := 0.U
-          }
-      }
-    }
-  }
-  
-  val result = Cat(0.U(16.W), Cat(finalsels2.flatten.reverse), Cat(finalsels1.flatten.reverse))
-  cmd.ready := true.B
-  io.resp.valid := cmd.valid
-  io.resp.bits.rd := cmd.bits.inst.rd
-  io.resp.bits.data := result
-    
-  io.busy := cmd.valid
-  io.interrupt := false.B
-  // The parts of the command are as follows
-  // inst - the parts of the instruction itself
-  //   opcode
-  //   rd - destination register number
-  //   rs1 - first source register number
-  //   rs2 - second source register number
-  //   funct
-  //   xd - is the destination register being used?
-  //   xs1 - is the first source register being used?
-  //   xs2 - is the second source register being used?
-  // rs1 - the value of source register 1
-  // rs2 - the value of source register 2
-}
-//custom Rocc end
-
 class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     with HasRocketCoreParameters
     with HasCoreIO {
@@ -234,12 +138,38 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val custom_regin = RegInit(0.U(32.W))
   
   val counter = RegInit(0.U(32.W))
-  
+
+  val Mcheck_call = WireInit(false.B)
+  val score_apply = WireInit(false.B)
+  val start_check = RegInit(false.B)
+  val check_busy = RegInit(false.B)
   
   val jump_pc = RegInit(0.U(64.W))
 
+  //val rdata = WireInit(0.U(256.W))//for slave core to receive data
+  val receiving_rf = WireInit(false.B)//slave is receiving rf
+  val rece_rf_done = WireInit(false.B)
+  //val widx = WireInit(0.U(5.W))//reg number
+
+  val intrf_data = RegInit(VecInit(Seq.fill(32)(0.U(64.W))))//receive int arf 
+  val fprf_data = RegInit(VecInit(Seq.fill(32)(0.U(64.W))))//receive fp arf
+  val apply_en = WireInit(false.B)
+
+  val fcsr_out = RegInit(0.U(8.W))
+ 
+  dontTouch(receiving_rf)
+  dontTouch(rece_rf_done)
+  dontTouch(fcsr_out)
+  dontTouch(intrf_data)
+  dontTouch(fprf_data)
+  dontTouch(apply_en)
+  dontTouch(Mcheck_call)
+  dontTouch(start_check)
+  dontTouch(check_busy)
+  dontTouch(score_apply)
+
   val custom_regbool = RegInit(false.B)
-  val custom_regbool1 = RegInit(true.B)
+  val slave_rece_en = RegInit(true.B)
   
   val HartID1 = VecInit(GlobalParams.List_hartid1.map(_.U))
   val HartID2 = VecInit(GlobalParams.List_hartid2.map(_.U))
@@ -269,10 +199,28 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val isMaster = MasterID.contains(io.hartid)
   val isSlave = SlaveID.contains(io.hartid)
   val MFIFO_full = isMaster && FIFO.io.full
+
+  //tw'sdefinition
+  val instcoun = Module(new Instcounter())
+  val isa = Module(new ISS())
+  val copyvalid  = RegInit(false.B)
+  val sentvalid  = RegInit(false.B)
+  val q_copyvalid = Wire(Bool())  
+  
+  val en_copyvalid = Wire(Bool())
+  val pc_reg = RegInit(0.U(40.W))
+  val intpc_reg = RegInit(0.U(40.W))
+  val fsign = RegInit(true.B)
+  
+  val sbo = Wire(Vec(33,Bool()))
+  val fp_sbo = Wire(Vec(33,Bool()))
+  val statesignal = Wire(Bool())
+
   dontTouch(isGruop1)
   dontTouch(isGruop2)
   dontTouch(isMaster)
   dontTouch(isSlave)
+  dontTouch(MFIFO_full)
   /*                  
   val NumMaster1 = RegInit(GlobalParams.Num_Mastercores1.U(4.W))
   val NumSlave1 = RegInit(GlobalParams.Num_Slavecores1.U(4.W))
@@ -307,7 +255,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
 
   //debug singals
   dontTouch(custom_regbool)
-  dontTouch(custom_regbool1)
+  dontTouch(slave_rece_en)
   dontTouch(reg_sels)
   dontTouch(reg_slavesels)
   dontTouch(custom_reg)
@@ -498,6 +446,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val id_inst = id_expanded_inst.map(_.bits)
   ibuf.io.imem <> io.imem.resp
   ibuf.io.kill := take_pc
+  dontTouch(id_inst(0))
 
   require(decodeWidth == 1 /* TODO */ && retireWidth == decodeWidth)
   require(!(coreParams.useRVE && coreParams.fpu.nonEmpty), "Can't select both RVE and floating-point")
@@ -791,6 +740,10 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   coverExceptions(ex_xcpt, ex_cause, "EXECUTE", exCoverCauses)
 
   // memory stage
+  //val mem_rocc_inst = mem_reg_inst.asTypeOf(new RoCCInstruction())
+  //Mcheck_call := mem_ctrl.rocc && mem_reg_valid && mem_rocc_inst.opcode === "b0001011".U && (mem_rocc_inst.funct === 3.U)
+  //score_apply := mem_ctrl.rocc && mem_reg_valid && mem_rocc_inst.opcode === "b0001011".U && (mem_rocc_inst.funct === 5.U)
+
   val mem_pc_valid = mem_reg_valid || mem_reg_replay || mem_reg_xcpt_interrupt
   val mem_br_target = mem_reg_pc.asSInt +
     Mux(mem_ctrl.branch && mem_br_taken, ImmGen(IMM_SB, mem_reg_inst),
@@ -810,6 +763,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val mem_cfi_taken = (mem_ctrl.branch && mem_br_taken) || mem_ctrl.jalr || mem_ctrl.jal
   val mem_direction_misprediction = mem_ctrl.branch && mem_br_taken =/= (usingBTB.B && mem_reg_btb_resp.taken)
   val mem_misprediction = if (usingBTB) mem_wrong_npc else mem_cfi_taken
+  dontTouch(mem_misprediction)
   take_pc_mem := mem_reg_valid && !mem_reg_xcpt && (mem_misprediction || mem_reg_sfence)
 
   mem_reg_valid := !ctrl_killx
@@ -996,9 +950,83 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
                  Mux(wb_ctrl.csr =/= CSR.N, csr.io.rw.rdata,
                  Mux(wb_ctrl.mul, mul.map(_.io.resp.bits.data).getOrElse(wb_reg_wdata),
                  wb_reg_wdata))))
-  when (rf_wen) { rf.write(rf_waddr, rf_wdata) }
+
+  dontTouch(rf_wdata)
+
+  //tw's customs
+  q_copyvalid := copyvalid
+  dontTouch(copyvalid)
+  dontTouch(q_copyvalid)
+  
+  //instruction  counter IO hook up
+  instcoun.io.wb_valid := wb_valid
+  instcoun.io.start := true.B
+
+  when(Mcheck_call){
+    start_check := true.B // for master core
+  }
+  when(instcoun.io.copy_valid){
+    copyvalid := true.B
+  } 
+  
+  when(!csr.io.interrupt && ctrl_killd && q_copyvalid && fsign){
+      pc_reg := ibuf.io.pc
+      fsign := false.B
+  }
+  
+  //copy and sent module IO hook up  
+  //when(isMaster){
+    for( i <- 1 until 32){
+      isa.io.intreg_input(i.U) := rf.read(i.U)
+    }
+    isa.io.intreg_input(0) := 0.U
+    for( i <-0 until 32){
+      isa.io.fpreg_input(i) := io.fpu.frf(i)
+    }
+    isa.io.intpc_input := intpc_reg
+    isa.io.fpcsr_input := csr.io.fcsr_read
+    
+    instcoun.io.copy_done := isa.io.copy_done
+  //}.otherwise{
+    /*
+    for(i <- 0 until 32){
+      isa.io.intreg_input(i.U) := 0.U
+    }
+    for( i <-0 until 32){
+      isa.io.fpreg_input(i) := 0.U
+    }
+    isa.io.intpc_input := 0.U
+    isa.io.fpcsr_input := 0.U
+    
+    instcoun.io.copy_done := false.B
+  }
+  */
+  
+  when(isa.io.copy_done){
+    copyvalid := false.B
+    sentvalid := true.B
+    fsign := true.B
+  }
+  isa.io.sent_valid := sentvalid
+  when(isa.io.sent_done){
+    sentvalid := false.B
+  }
+
+  //use the register to test
+  val testreg = RegInit(0.U(65.W))
+  testreg :=  isa.io.sent_output
+  dontTouch(testreg)
+  //tw's custome
+
+  when(apply_en){
+    for(i <- 0 until 32){
+      rf.write(i.U, intrf_data(i))
+    }
+  }.elsewhen (rf_wen) { rf.write(rf_waddr, rf_wdata) }
 
   // hook up control/status regfile
+  csr.io.fcsr_in := fcsr_out
+  csr.io.pfcsr_en := apply_en
   csr.io.ungated_clock := clock
   csr.io.decode(0).inst := id_inst(0)
   csr.io.exception := wb_xcpt
@@ -1108,6 +1136,13 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     fp_sboard.clear(dmem_resp_replay && dmem_resp_fpu, dmem_resp_waddr)
     fp_sboard.clear(io.fpu.sboard_clr, io.fpu.sboard_clra)
 
+    //tw's customs
+    fp_sbo(0) := false.B
+    for(i <- 1 until 33){ 
+      fp_sbo(i) := fp_sbo(i-1) || fp_sboard.read(i.U) 
+    }
+    //tw's custome
+
     checkHazards(fp_hazard_targets, fp_sboard.read _)
   } else false.B
 
@@ -1132,8 +1167,14 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     id_do_fence ||
     csr.io.csr_stall ||
     id_reg_pause ||
-    io.traceStall
-  ctrl_killd := !ibuf.io.inst(0).valid || ibuf.io.inst(0).bits.replay || take_pc_mem_wb || ctrl_stalld || csr.io.interrupt || MFIFO_full
+    io.traceStall ||
+    q_copyvalid
+  dontTouch(ctrl_stalld)
+  ctrl_killd := !ibuf.io.inst(0).valid || ibuf.io.inst(0).bits.replay || take_pc_mem_wb || ctrl_stalld || csr.io.interrupt
+
+  when(ctrl_killd && !ex_reg_valid && mem_reg_valid && q_copyvalid){
+     intpc_reg := mem_npc
+  }
 
   io.imem.req.valid := take_pc
   io.imem.req.bits.speculative := !take_pc_wb
@@ -1187,6 +1228,8 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   io.fpu.dmem_resp_type := io.dmem.resp.bits.size
   io.fpu.dmem_resp_tag := dmem_resp_waddr
   io.fpu.keep_clock_enabled := io.ptw.customCSRs.disableCoreClockGate
+  io.fpu.apply_en := apply_en
+  io.fpu.apply_bits := fprf_data
 
   io.dmem.req.valid     := ex_reg_valid && ex_ctrl.mem
   val ex_dcache_tag = Cat(ex_waddr, ex_ctrl.fp)
@@ -1211,20 +1254,24 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   io.rocc.cmd.bits.status := csr.io.status
   io.rocc.cmd.bits.inst := wb_reg_inst.asTypeOf(new RoCCInstruction())
   io.rocc.cmd.bits.rs1 := wb_reg_wdata
-  io.rocc.cmd.bits.rs2 := wb_reg_rs2                                   
+  io.rocc.cmd.bits.rs2 := wb_reg_rs2       
+  io.rocc.score_rece_done := rece_rf_done 
+  io.rocc.mcore_runing := !ctrl_killd                           
 
   //rocc.resp.data
   val NumID = RegInit(VecInit(Seq.fill(2)(0.U(4.W))))
   val tempID = RegInit(VecInit(Seq.fill(GlobalParams.Num_Groupcores)(15.U(4.W))))
-  when(io.rocc.cmd.valid && io.rocc.cmd.bits.inst.funct === 1.U){
+  when(io.rocc.cmd.valid && io.rocc.cmd.bits.inst.opcode === "b0001011".U &&io.rocc.cmd.bits.inst.funct === 1.U){
       custom_regbool := io.rocc.cmd.bits.rs1(0).asBool
-    }
-  when(io.rocc.cmd.valid && io.rocc.cmd.bits.inst.funct === 2.U){
-    custom_regbool1 := io.rocc.cmd.bits.rs1(0).asBool
   }
+  when(io.rocc.cmd.valid && io.rocc.cmd.bits.inst.opcode === "b0001011".U && io.rocc.cmd.bits.inst.funct === 2.U){
+    slave_rece_en := io.rocc.cmd.bits.rs1(0).asBool
+  }
+  
+  
 
   when(HartID1.contains(io.hartid)){
-    when(io.rocc.cmd.valid && io.rocc.cmd.bits.inst.funct === 4.U){
+    when(io.rocc.cmd.valid && io.rocc.cmd.bits.inst.opcode === "b0001011".U && io.rocc.cmd.bits.inst.funct === 4.U){
       NumMaster := io.rocc.cmd.bits.rs1(3, 0)
       NumSlave := GlobalParams.Num_Groupcores.U - io.rocc.cmd.bits.rs1(3, 0)
       tempID := VecInit(Seq.tabulate(GlobalParams.Num_Groupcores){i => io.rocc.cmd.bits.rs2(4 * (i + 1) - 1, 4 * i)})
@@ -1233,7 +1280,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     
     val resp_funct = RegNext(RegNext(RegNext(io.rocc.cmd.bits.inst.funct)))
     
-    when(io.rocc.resp.valid && resp_funct === 4.U){
+    when(io.rocc.resp.valid && io.rocc.cmd.bits.inst.opcode === "b0001011".U && resp_funct === 4.U){
       for(i <- 0 until GlobalParams.Num_Groupcores){
         when(i.U < NumMaster){
           MasterID(i) := nexttempID(GlobalParams.Num_Groupcores - i - 1)
@@ -1249,7 +1296,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
       })
     }
   }.otherwise{
-    when(io.rocc.cmd.valid && io.rocc.cmd.bits.inst.funct === 4.U){
+    when(io.rocc.cmd.valid && io.rocc.cmd.bits.inst.opcode === "b0001011".U && io.rocc.cmd.bits.inst.funct === 4.U){
       NumMaster := io.rocc.cmd.bits.rs1(7, 4)
       NumSlave := GlobalParams.Num_Groupcores.U - io.rocc.cmd.bits.rs1(7, 4)
       tempID := VecInit(Seq.tabulate(GlobalParams.Num_Groupcores){i => io.rocc.cmd.bits.rs2(4 * (i + 5) - 1, 4 * (i + 4))})
@@ -1258,7 +1305,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     
     val resp_funct = RegNext(RegNext(RegNext(io.rocc.cmd.bits.inst.funct)))
     
-    when(io.rocc.resp.valid && resp_funct === 4.U){
+    when(io.rocc.resp.valid && io.rocc.cmd.bits.inst.opcode === "b0001011".U && resp_funct === 4.U){
       for(i <- 0 until GlobalParams.Num_Groupcores){
         when(i.U < NumMaster){
           MasterID(i) := nexttempID(GlobalParams.Num_Groupcores - i - 1)
@@ -1355,8 +1402,8 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   //FIFO connect
 when(isGruop1){
   when(isMaster){
-    FIFO.io.in.bits := ex_reg_pc
-    FIFO.io.in.valid := custom_regbool
+    FIFO.io.in.bits := isa.io.sent_output
+    FIFO.io.in.valid := sentvalid
     FIFO.io.out <> otmmux.io.in
     io.custom_FIFOout <> otmmux.io.out
     otmmux.io.sels := reg_sels(io.hartid)
@@ -1371,9 +1418,34 @@ when(isGruop1){
     io.custom_FIFOin <> mtomux.io.in
     mtomux.io.out <> FIFO.io.in
     mtomux.io.sels := reg_slavesels(io.hartid).asBools
-    FIFO.io.out.ready := custom_regbool1
+    FIFO.io.out.ready := slave_rece_en
 
-    jump_pc := FIFO.io.out.bits
+    
+    //jump_pc := FIFO.io.out.bits
+    val rdata = Mux(FIFO.io.empty, 0.U, FIFO.io.out.bits)
+    val widx = rdata(250, 246)
+    
+    receiving_rf := Mux(rdata(255, 253) === "b101".U, true.B, false.B)
+    when(receiving_rf){
+      start_check := true.B // for slave core
+    }
+    apply_en := !receiving_rf && score_apply
+    rece_rf_done := !receiving_rf && start_check
+
+    when(rdata(255, 253) === "b101".U){
+      when(rdata(252, 251) === 0.U){
+        intrf_data(widx) := rdata(63, 0)
+      }.elsewhen(rdata(252, 251) === 1.U){
+        fprf_data(widx) := rdata(63, 0)
+      }.elsewhen(rdata(252, 251) === 2.U){
+        jump_pc := rdata(47, 8)
+        fcsr_out := rdata(7, 0)
+      }
+    }
+
+    when(ex_ctrl.jalr && (ex_reg_inst(12) === 1.U)){
+      check_busy := true.B
+    }
 
     otmmux.io.in.valid := false.B
     otmmux.io.in.bits := 0.U
@@ -1401,7 +1473,7 @@ when(isGruop1){
     io.custom_FIFOin <> mtomux.io.in
     mtomux.io.out <> FIFO.io.in
     mtomux.io.sels := reg_slavesels(io.hartid - 4.U).asBools
-    FIFO.io.out.ready := custom_regbool1
+    FIFO.io.out.ready := slave_rece_en
 
     otmmux.io.in.valid := false.B
     otmmux.io.in.bits := 0.U
@@ -1457,6 +1529,7 @@ when(isGruop1){
   csr.io.counters foreach { c => c.inc := RegNext(perfEvents.evaluate(c.eventSel)) }
 
   val coreMonitorBundle = Wire(new CoreMonitorBundle(xLen, fLen))
+  dontTouch(coreMonitorBundle)
 
   coreMonitorBundle.clock := clock
   coreMonitorBundle.reset := reset
@@ -1518,6 +1591,24 @@ when(isGruop1){
     }
   }
 
+  //generate copy signal
+  sbo(0) := false.B
+  for(i <- 1 until 33){ 
+    sbo(i) := sbo(i-1) || sboard.read(i.U) 
+  }
+  
+  statesignal := !ex_reg_valid && !mem_reg_valid && !wb_reg_valid
+  //this is for the copyvalid input enable signal 
+  en_copyvalid := !sbo(32) && !fp_sbo(32) && !io.fpu.fpu_inflight && div.io.req.ready && statesignal && !isa.io.copy_done && !csr.io.interrupt && ctrl_stalld && q_copyvalid && !fsign
+  dontTouch(en_copyvalid)
+  
+  when(en_copyvalid){
+    isa.io.copy_valid := q_copyvalid
+  }
+  .otherwise{
+    isa.io.copy_valid := false.B
+  }
+
   // CoreMonitorBundle for late latency writes
   val xrfWriteBundle = Wire(new CoreMonitorBundle(xLen, fLen))
 
@@ -1557,6 +1648,7 @@ when(isGruop1){
   val amo_is_d = coreMonitorBundle.inst(14,12) === "b011".U
 
   val my_log_unit = Module(new LogUnit)
+  my_log_unit.io.inst       := coreMonitorBundle.inst
   my_log_unit.io.valid      := log_valid
   my_log_unit.io.mem        := log_mem
   my_log_unit.io.mem_cmd    := log_mem_cmd
