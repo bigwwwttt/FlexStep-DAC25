@@ -205,6 +205,11 @@ class FPUCoreIO(implicit p: Parameters) extends CoreBundle()(p) {
   val sboard_clra = Output(UInt(5.W))
 
   val keep_clock_enabled = Input(Bool())
+  val frf = Output(Vec(32, UInt(64.W)))
+  val fpu_inflight = Output(Bool())
+
+  val apply_bits = Vec(32, Input(UInt(fLen.W)))
+  val apply_en = Input(Bool())
 }
 
 class FPUIO(implicit p: Parameters) extends FPUCoreIO ()(p) {
@@ -804,6 +809,20 @@ class FPU(cfg: FPUParams)(implicit p: Parameters) extends FPUModule()(p) {
     frfWriteBundle(0).wrdata := ieee(wdata)
   }
 
+  //read
+  for (i <-0 until 32) { 
+    io.frf(i) := ieee(regfile(i))
+  }
+  dontTouch(io.apply_en)
+  when(io.apply_en){
+    for( i <- 0 until 32 ){
+      val apply_type = Mux(io.apply_bits(i)(63, 32) === "hFFFFFFFF".U, 0.U, 1.U)
+      regfile(i) := recode(io.apply_bits(i), apply_type)
+    }
+    
+  }
+  
+
   val ex_rs = ex_ra.map(a => regfile(a))
   when (io.valid) {
     when (id_ctrl.ren1) {
@@ -1004,6 +1023,7 @@ class FPU(cfg: FPUParams)(implicit p: Parameters) extends FPUModule()(p) {
     }
 
     when (divSqrt_killed) { divSqrt_inFlight := false.B }
+    io.fpu_inflight := divSqrt_inFlight || divSqrt_inValid || divSqrt_wen || (wen =/= 0.U)
   } else {
     when (id_ctrl.div || id_ctrl.sqrt) { io.illegal_rm := true.B }
   }
