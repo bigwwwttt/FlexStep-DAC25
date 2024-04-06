@@ -257,6 +257,10 @@ class CSRFileIO(implicit p: Parameters) extends CoreBundle
   val eret = Output(Bool())
   val singleStep = Output(Bool())
 
+  val fcsr_read = Output(UInt(8.W))
+  val fcsr_in = Input(UInt(8.W))
+  val pfcsr_en = Input(Bool())
+
   val status = Output(new MStatus())
   val hstatus = Output(new HStatus())
   val gstatus = Output(new MStatus())
@@ -1249,7 +1253,10 @@ class CSRFile(
     if (usingFPU) {
       when (decoded_addr(CSRs.fflags)) { set_fs_dirty := true.B; reg_fflags := wdata }
       when (decoded_addr(CSRs.frm))    { set_fs_dirty := true.B; reg_frm := wdata }
-      when (decoded_addr(CSRs.fcsr)) {
+      when(io.pfcsr_en){
+        reg_fflags := io.fcsr_in(4, 0)
+        reg_frm := io.fcsr_in(7,5)
+      }.elsewhen (decoded_addr(CSRs.fcsr)) {
         set_fs_dirty := true.B
         reg_fflags := wdata
         reg_frm := wdata >> reg_fflags.getWidth
@@ -1585,4 +1592,6 @@ class CSRFile(
   def isaStringToMask(s: String) = s.map(x => 1 << (x - 'A')).foldLeft(0)(_|_)
   def formFS(fs: UInt) = if (coreParams.haveFSDirty) fs else Fill(2, fs.orR)
   def formVS(vs: UInt) = if (usingVector) vs else 0.U
+
+  io.fcsr_read := read_fcsr
 }
