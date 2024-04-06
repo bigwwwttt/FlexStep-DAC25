@@ -198,6 +198,8 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
   // Connect the coprocessor interfaces
   if (outer.roccs.size > 0) {
     cmdRouter.get.io.in <> core.io.rocc.cmd
+    cmdRouter.get.io.score_cdone_input := core.io.rocc.score_rece_done
+    cmdRouter.get.io.mcore_running_input := core.io.rocc.mcore_runing
     outer.roccs.foreach(_.module.io.exception := core.io.rocc.exception)
     core.io.rocc.resp <> respArb.get.io.out
     core.io.rocc.busy <> (cmdRouter.get.io.busy || outer.roccs.map(_.module.io.busy).reduce(_ || _))
