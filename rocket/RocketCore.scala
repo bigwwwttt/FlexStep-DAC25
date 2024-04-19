@@ -985,7 +985,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
 
 
 
-  when(ctrl_killd && !ex_reg_valid && mem_reg_valid){
+  when(ctrl_killd && wb_valid && mem_reg_valid){
     intpc_reg := mem_npc
   }    
   
