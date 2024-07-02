@@ -18,23 +18,34 @@ class CustomAcceleratorModule(outer: CustomAccelerator) extends LazyRoCCModuleIm
   val cmd = Queue(io.cmd)
   val funct = cmd.bits.inst.funct
 
-  val dowrite = funct === 0.U
-  val dochange = funct === 4.U
-  val doMcheck = funct === 3.U
-  val doScheck_cp = funct === 6.U
-  val domcheck_running = funct === 7.U
+  val dowrite                 = funct === 0.U
+  val dochange                = funct === 4.U
+  val doMcheck                = funct === 3.U
+  val doScheck_cp             = funct === 6.U
+  val domcheck_running        = funct === 7.U
+  val doscheck_receving       = funct === 8.U
+  val doscheck_mode           = funct === 10.U
 
-  val scp_done = io.score_rece_done
-  val mcore_running = io.mcore_runing
+  val scp_done                = io.score_rece_done
+  val mcore_running           = io.mcore_runing
+  val score_receingrf         = io.score_recerf
+  val check_mode              = io.score_checkmode
 
   dontTouch(io.score_rece_done)
   dontTouch(io.mcore_runing)
 
 
-  val Num_Mastercores1 = cmd.bits.rs1(3, 0)
-  val Num_Slavecores1 = GlobalParams.Num_Groupcores.U - Num_Mastercores1
-  val Num_Mastercores2 = cmd.bits.rs1(7, 4)
-  val Num_Slavecores2 = GlobalParams.Num_Groupcores.U - Num_Mastercores2
+  val Num_Mastercores1 = cmd.bits.rs1(7, 4)
+  val Num_Slavecores1  = GlobalParams.Num_Groupcores.U - Num_Mastercores1
+  val Mulicheck1       = (Num_Mastercores1 < Num_Slavecores1)
+  val Num_checkcore1   = Mux(Mulicheck1, cmd.bits.rs1(3, 0), 1.U)
+  
+  
+  val Num_Mastercores2 = cmd.bits.rs1(15, 12)
+  val Num_Slavecores2  = GlobalParams.Num_Groupcores.U - Num_Mastercores2
+  val Mulicheck2       = (Num_Mastercores2 < Num_Slavecores2)
+  val Num_checkcore2   = Mux(Mulicheck2, cmd.bits.rs1(11, 8), 1.U)
+
   val HartId1 = VecInit(Seq.tabulate(GlobalParams.Num_Groupcores){ i => cmd.bits.rs2(4 * (i + 1) - 1, 4 * i) })
   val HartId2 = VecInit(Seq.tabulate(GlobalParams.Num_Groupcores){ i => cmd.bits.rs2(4 * (i + 5) - 1, 4 * (i + 4)) })
   val sels = 0.U(xLen.W)
@@ -65,11 +76,17 @@ class CustomAcceleratorModule(outer: CustomAccelerator) extends LazyRoCCModuleIm
             finalsels1(HartId1(GlobalParams.Num_Groupcores - i - 1))(j) := 0.U
           }                                                                          
         }
+      }.elsewhen(i.U < Num_Slavecores1){
+        finalsels1(HartId1(GlobalParams.Num_Groupcores.U - Num_Mastercores1))(HartId1(i)) := 1.U
+        for(j <- 0 until GlobalParams.Num_Groupcores){
+            finalsels1(HartId1(GlobalParams.Num_Groupcores - i - 1))(j) := 0.U
+        } 
       }.otherwise{
         for(j <- 0 until GlobalParams.Num_Groupcores){
             finalsels1(HartId1(GlobalParams.Num_Groupcores - i - 1))(j) := 0.U
         }  
       }
+      
 
       when(i.U < Num_Mastercores2){
         when(i.U < Num_Slavecores2){
@@ -85,6 +102,11 @@ class CustomAcceleratorModule(outer: CustomAccelerator) extends LazyRoCCModuleIm
             finalsels2(HartId2(GlobalParams.Num_Groupcores - i - 1) - 4.U)(j) := 0.U
           }
         }
+      }.elsewhen(i.U < Num_Slavecores2){
+        finalsels2(HartId2(GlobalParams.Num_Groupcores.U - Num_Mastercores2) - 4.U)(HartId2(i) - 4.U) := 1.U
+        for(j <- 0 until GlobalParams.Num_Groupcores){
+            finalsels2(HartId2(GlobalParams.Num_Groupcores - i - 1) - 4.U)(j) := 0.U
+        } 
       }.otherwise{
         for(j <- 0 until GlobalParams.Num_Groupcores){
             finalsels2(HartId2(GlobalParams.Num_Groupcores - i - 1) - 4.U)(j) := 0.U
@@ -93,22 +115,29 @@ class CustomAcceleratorModule(outer: CustomAccelerator) extends LazyRoCCModuleIm
     }
   }
   
+  
   rd_val := MuxCase(0.U,
               Seq(
                 dowrite           -> "b0011".U,
                 dochange          -> Cat(0.U(16.W), Cat(finalsels2.flatten.reverse), Cat(finalsels1.flatten.reverse)),
                 doMcheck          -> "b1100".U,
                 doScheck_cp       -> Cat(scp_done.asUInt, 0.U(3.W)),
-                domcheck_running  -> Cat(mcore_running.asUInt, 1.U(3.W))
+                domcheck_running  -> Cat(mcore_running.asUInt, 1.U(3.W)),
+                doscheck_receving -> Cat(score_receingrf.asUInt, 2.U(3.W)),
+                doscheck_mode     -> Cat(check_mode.asUInt, 3.U(3.W))
               )
   )
+  
     
   val doResp = cmd.bits.inst.xd
 
   cmd.ready := true.B
-  io.resp.valid := cmd.valid
-  io.resp.bits.rd := cmd.bits.inst.rd
-  io.resp.bits.data := rd_val
+
+  io.resp.valid          := cmd.valid && doResp
+  io.resp.bits.rd        := cmd.bits.inst.rd
+  io.resp.bits.funct     := funct
+  io.resp.bits.opcode    := cmd.bits.inst.opcode
+  io.resp.bits.data      := rd_val
     
   io.busy := cmd.valid
   io.interrupt := false.B
