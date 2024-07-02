@@ -12,6 +12,7 @@ import freechips.rocketchip.tile._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.prci.{ClockGroup, ResetCrossingType, ClockGroupNode}
 import freechips.rocketchip.util._
+import chisel3.util.DecoupledIO
 
 /** Entry point for Config-uring the presence of Tiles */
 case class TilesLocated(loc: HierarchicalLocation) extends Field[Seq[CanAttachTile]](Nil)
@@ -230,16 +231,18 @@ trait DefaultTileContextType
   with HasTileInputConstants
 { this: BaseSubsystem =>
   val debugNode: IntSyncOutwardNode
-  //costom node
+  //custom node
   //Group1
-  val costomReady_Nodes1 = Seq.fill(GlobalParams.Num_Groupcores)(Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeEphemeralNode[Bool]()))
-  val costomValid_Nodes1 = Seq.fill(GlobalParams.Num_Groupcores)(Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeEphemeralNode[Bool]()))
-  val costomBits_Nodes1 = Seq.fill(GlobalParams.Num_Groupcores)(Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeEphemeralNode[UInt]()))
+  val customReady_Nodes1 = Seq.fill(GlobalParams.Num_Groupcores)(Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeEphemeralNode[Bool]()))
+  val customValid_Nodes1 = Seq.fill(GlobalParams.Num_Groupcores)(Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeEphemeralNode[Bool]()))
+  val customBits_Nodes1 = Seq.fill(GlobalParams.Num_Groupcores)(Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeEphemeralNode[UInt]()))
+  val custombusy_Node1 = Seq.fill(GlobalParams.Num_Groupcores)(Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeEphemeralNode[Bool]()))
   //Group2
-  val costomReady_Nodes2 = Seq.fill(GlobalParams.Num_Groupcores)(Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeEphemeralNode[Bool]()))
-  val costomValid_Nodes2 = Seq.fill(GlobalParams.Num_Groupcores)(Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeEphemeralNode[Bool]()))
-  val costomBits_Nodes2 = Seq.fill(GlobalParams.Num_Groupcores)(Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeEphemeralNode[UInt]()))
-
+  val customReady_Nodes2 = Seq.fill(GlobalParams.Num_Groupcores)(Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeEphemeralNode[Bool]()))
+  val customValid_Nodes2 = Seq.fill(GlobalParams.Num_Groupcores)(Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeEphemeralNode[Bool]()))
+  val customBits_Nodes2 = Seq.fill(GlobalParams.Num_Groupcores)(Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeEphemeralNode[UInt]()))
+  val custombusy_Node2 = Seq.fill(GlobalParams.Num_Groupcores)(Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeEphemeralNode[Bool]()))
+  /*
   //share data node
   val selectNode1 = BundleBridgeIdentityNode[UInt]()
   val NumMasterNode1 = Seq.fill(3)(BundleBridgeEphemeralNode[UInt]())
@@ -252,6 +255,7 @@ trait DefaultTileContextType
   val NumSlaveNode2 = BundleBridgeIdentityNode[UInt]()
   val MasterIDNode2 = BundleBridgeIdentityNode[UInt]()
   val SlaveIDNode2 = BundleBridgeIdentityNode[UInt]()
+  */
 
   //node end
 } // TODO: ideally this bound would be softened to LazyModule
@@ -286,11 +290,11 @@ trait CanAttachTile {
     connectOutputNotifications(domain, context)
     connectInputConstants(domain, context)
 
-    costomConnect(domain, context)
+    customConnect(domain, context)
   }
 
-  //costom connect
-  def costomConnect(domain: TilePRCIDomain[TileType], context: TileContextType): Unit = {
+  //custom connect
+  def customConnect(domain: TilePRCIDomain[TileType], context: TileContextType): Unit = {
     implicit val p = context.p
     //Group1 connect
     /*
@@ -338,13 +342,17 @@ trait CanAttachTile {
     for(i <- 0 until GlobalParams.Num_Groupcores){
       if(tileParams.hartId == GlobalParams.List_hartid1(i)){
         for(j <- 0 until GlobalParams.Num_Groupcores){
-          context.costomBits_Nodes1(tileParams.hartId)(j) := domain.tile.costomMasterBits_Nodes(j)
-          context.costomValid_Nodes1(tileParams.hartId)(j) := domain.tile.costomMasterValid_Nodes(j)
-          domain.tile.costomMasterReady_Nodes(j) := context.costomReady_Nodes1(tileParams.hartId)(j)
+          context.customBits_Nodes1(tileParams.hartId)(j) := domain.tile.customMasterBits_Nodes(j)
+          context.customValid_Nodes1(tileParams.hartId)(j) := domain.tile.customMasterValid_Nodes(j)
+          domain.tile.customMasterReady_Nodes(j) := context.customReady_Nodes1(tileParams.hartId)(j)
 
-          domain.tile.costomSlaveBits_Nodes(j) := context.costomBits_Nodes1(j)(tileParams.hartId)
-          domain.tile.costomSlaveValid_Nodes(j) := context.costomValid_Nodes1(j)(tileParams.hartId)
-          context.costomReady_Nodes1(j)(tileParams.hartId) := domain.tile.costomSlaveReady_Nodes(j)
+          context.custombusy_Node1(tileParams.hartId)(j) := domain.tile.customSlavebusy_Node(j)
+
+          domain.tile.customSlaveBits_Nodes(j) := context.customBits_Nodes1(j)(tileParams.hartId)
+          domain.tile.customSlaveValid_Nodes(j) := context.customValid_Nodes1(j)(tileParams.hartId)
+          context.customReady_Nodes1(j)(tileParams.hartId) := domain.tile.customSlaveReady_Nodes(j)
+
+          domain.tile.customMasterbusy_Node(j) := context.custombusy_Node1(j)(tileParams.hartId)
         }
       }
     }
@@ -353,18 +361,22 @@ trait CanAttachTile {
     for(i <- 0 until GlobalParams.Num_Groupcores){
       if(tileParams.hartId == GlobalParams.List_hartid2(i)){
         for(j <- 0 until GlobalParams.Num_Groupcores){
-          context.costomBits_Nodes2(tileParams.hartId - 4)(j) := domain.tile.costomMasterBits_Nodes(j)
-          context.costomValid_Nodes2(tileParams.hartId - 4)(j) := domain.tile.costomMasterValid_Nodes(j)
-          domain.tile.costomMasterReady_Nodes(j) := context.costomReady_Nodes2(tileParams.hartId - 4)(j)
+          context.customBits_Nodes2(tileParams.hartId - 4)(j) := domain.tile.customMasterBits_Nodes(j)
+          context.customValid_Nodes2(tileParams.hartId - 4)(j) := domain.tile.customMasterValid_Nodes(j)
+          domain.tile.customMasterReady_Nodes(j) := context.customReady_Nodes2(tileParams.hartId - 4)(j)
 
-          domain.tile.costomSlaveBits_Nodes(j) := context.costomBits_Nodes2(j)(tileParams.hartId - 4)
-          domain.tile.costomSlaveValid_Nodes(j) := context.costomValid_Nodes2(j)(tileParams.hartId - 4)
-          context.costomReady_Nodes2(j)(tileParams.hartId - 4) := domain.tile.costomSlaveReady_Nodes(j)
+          context.custombusy_Node2(tileParams.hartId - 4)(j) := domain.tile.customSlavebusy_Node(j)
+
+          domain.tile.customSlaveBits_Nodes(j) := context.customBits_Nodes2(j)(tileParams.hartId - 4)
+          domain.tile.customSlaveValid_Nodes(j) := context.customValid_Nodes2(j)(tileParams.hartId - 4)
+          context.customReady_Nodes2(j)(tileParams.hartId - 4) := domain.tile.customSlaveReady_Nodes(j)
+
+          domain.tile.customMasterbusy_Node(j) := context.custombusy_Node2(j)(tileParams.hartId - 4)
         }
       }
     }
   }
-  //costom connect end
+  //custom connect end
 
   /** Connect the port where the tile is the master to a TileLink interconnect. */
   def connectMasterPorts(domain: TilePRCIDomain[TileType], context: Attachable): Unit = {
