@@ -12,6 +12,7 @@ import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.rocket._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util.InOrderArbiter
+import firrtl.PrimOps
 
 case object BuildRoCC extends Field[Seq[Parameters => LazyRoCC]](Nil)
 
@@ -36,6 +37,8 @@ class RoCCCommand(implicit p: Parameters) extends CoreBundle()(p) {
 class RoCCResponse(implicit p: Parameters) extends CoreBundle()(p) {
   val rd = Bits(5.W)
   val data = Bits(xLen.W)
+  val funct = Bits(7.W)
+  val opcode = Bits(7.W)
 }
 
 class RoCCCoreIO(val nRoCCCSRs: Int = 0)(implicit p: Parameters) extends CoreBundle()(p) {
@@ -49,6 +52,8 @@ class RoCCCoreIO(val nRoCCCSRs: Int = 0)(implicit p: Parameters) extends CoreBun
   //custom IO
   val score_rece_done = Input(Bool())
   val mcore_runing = Input(Bool())
+  val score_recerf = Input(Bool())
+  val score_checkmode = Input(Bool())
 }
 
 class RoCCIO(val nPTWPorts: Int, nRoCCCSRs: Int)(implicit p: Parameters) extends RoCCCoreIO(nRoCCCSRs)(p) {
@@ -99,6 +104,8 @@ trait HasLazyRoCCModule extends CanHavePTWModule
       rocc.module.io.cmd <> cmdRouter.io.out(i)
       rocc.module.io.score_rece_done := cmdRouter.io.score_cdone_output
       rocc.module.io.mcore_runing := cmdRouter.io.mcore_running_output
+      rocc.module.io.score_recerf := cmdRouter.io.score_rrf_output
+      rocc.module.io.score_checkmode := cmdRouter.io.score_checkmode_out
       val dcIF = Module(new SimpleHellaCacheIF()(outer.p))
       dcIF.io.requestor <> rocc.module.io.mem
       dcachePorts += dcIF.io.cache
@@ -421,6 +428,12 @@ class RoccCommandRouter(opcodes: Seq[OpcodeSet])(implicit p: Parameters)
 
     val mcore_running_input = Input(Bool())
     val mcore_running_output = Output(Bool())
+
+    val score_rrf_input = Input(Bool())
+    val score_rrf_output = Output(Bool())
+
+    val score_checkmode_in = Input(Bool())
+    val score_checkmode_out = Output(Bool())
   }
 
   val cmd = Queue(io.in)
@@ -435,7 +448,8 @@ class RoccCommandRouter(opcodes: Seq[OpcodeSet])(implicit p: Parameters)
 
   io.score_cdone_output := io.score_cdone_input
   io.mcore_running_output := io.mcore_running_input
-
+  io.score_rrf_output := io.score_rrf_input
+  io.score_checkmode_out := io.score_checkmode_in
   assert(PopCount(cmdReadys) <= 1.U,
     "Custom opcode matched for more than one accelerator")
 }
