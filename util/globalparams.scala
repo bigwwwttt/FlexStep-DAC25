@@ -10,7 +10,7 @@ object GlobalParams {
   val List_hartid2 = (Num_Groupcores until Num_cores by 1).toList
 
 
-  var List_MasterId1 = List(0, 1, 2)
+  var List_MasterId1 = List(0, 1)
   var List_MasterId2 = List(4, 5)
   var Num_Mastercores1 = List_MasterId1.length
   var Num_Slavecores1 = Num_Groupcores - Num_Mastercores1
@@ -19,7 +19,7 @@ object GlobalParams {
   var List_SlaveId1 = List_hartid1.filterNot(List_MasterId1.contains)
   var List_SlaveId2 = List_hartid2.filterNot(List_MasterId2.contains)
   
-  val Data_width = 32
+  val Data_width = 256
   val Data_type = UInt(Data_width.W)
   val depth = 32
 }
