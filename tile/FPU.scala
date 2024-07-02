@@ -208,7 +208,8 @@ class FPUCoreIO(implicit p: Parameters) extends CoreBundle()(p) {
   val frf = Output(Vec(32, UInt(64.W)))
   val fpu_inflight = Output(Bool())
 
-  val apply_bits = Vec(32, Input(UInt(fLen.W)))
+  val apply_bits = Input(UInt(fLen.W))
+  val apply_idx = Input(UInt(5.W))
   val apply_en = Input(Bool())
 }
 
@@ -793,6 +794,8 @@ class FPU(cfg: FPUParams)(implicit p: Parameters) extends FPUModule()(p) {
     i.wrenf := false.B
     i.excpt := false.B
   }
+  dontTouch(frfWriteBundle(0))
+  dontTouch(frfWriteBundle(1))
 
   // regfile
   val regfile = Mem(32, Bits((fLen+1).W))
@@ -815,12 +818,11 @@ class FPU(cfg: FPUParams)(implicit p: Parameters) extends FPUModule()(p) {
   }
   dontTouch(io.apply_en)
   when(io.apply_en){
-    for( i <- 0 until 32 ){
-      val apply_type = Mux(io.apply_bits(i)(63, 32) === "hFFFFFFFF".U, 0.U, 1.U)
-      regfile(i) := recode(io.apply_bits(i), apply_type)
-    }
-    
+    val apply_type = Mux(io.apply_bits(63, 32) === "hFFFFFFFF".U, 0.U, 1.U)
+    regfile(io.apply_idx) := recode(io.apply_bits, apply_type)
   }
+    
+  
   
 
   val ex_rs = ex_ra.map(a => regfile(a))
@@ -951,6 +953,9 @@ class FPU(cfg: FPUParams)(implicit p: Parameters) extends FPUModule()(p) {
   val wtypeTag = Mux(divSqrt_wen, divSqrt_typeTag, wbInfo(0).typeTag)
   val wdata = box(Mux(divSqrt_wen, divSqrt_wdata, (pipes.map(_.res.data): Seq[UInt])(wbInfo(0).pipeid)), wtypeTag)
   val wexc = (pipes.map(_.res.exc): Seq[UInt])(wbInfo(0).pipeid)
+  dontTouch(wdata)
+  dontTouch(waddr)
+  dontTouch(wtypeTag)
   when ((!wbInfo(0).cp && wen(0)) || divSqrt_wen) {
     assert(consistent(wdata))
     regfile(waddr) := wdata
