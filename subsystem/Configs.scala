@@ -357,6 +357,15 @@ class WithRoccExample extends Config((site, here, up) => {
     })
 })
 
+class WithCustomAccelerator extends Config((site, here, up) => {
+  case BuildRoCC => List(
+    (p: Parameters) => {
+      val customrocc = LazyModule(new CustomAccelerator(OpcodeSet.custom0)(p))
+      customrocc
+  })
+})
+
+
 class WithDefaultBtb extends Config((site, here, up) => {
   case TilesLocated(InSubsystem) => up(TilesLocated(InSubsystem), site) map {
     case tp: RocketTileAttachParams => tp.copy(tileParams = tp.tileParams.copy(
