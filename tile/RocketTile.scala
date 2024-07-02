@@ -126,17 +126,20 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
 
   val core = Module(new Rocket(outer)(outer.p))
 
-  //costom start
+  //custom start
   for(i <- 0 until GlobalParams.Num_Groupcores){
-    outer.costomMasterBits_Nodes(i).bundle := core.io.custom_FIFOout(i).bits
-    outer.costomMasterValid_Nodes(i).bundle := core.io.custom_FIFOout(i).valid
-    core.io.custom_FIFOout(i).ready := outer.costomMasterReady_Nodes(i).bundle
+    outer.customMasterBits_Nodes(i).bundle := core.io.custom_FIFOout(i).bits
+    outer.customMasterValid_Nodes(i).bundle := core.io.custom_FIFOout(i).valid
+    core.io.custom_FIFOout(i).ready := outer.customMasterReady_Nodes(i).bundle
+    core.io.score_busy_in(i) := outer.customMasterbusy_Node(i).bundle
 
-    core.io.custom_FIFOin(i).bits := outer.costomSlaveBits_Nodes(i).bundle
-    core.io.custom_FIFOin(i).valid := outer.costomSlaveValid_Nodes(i).bundle
-    outer.costomSlaveReady_Nodes(i).bundle := core.io.custom_FIFOin(i).ready
+    core.io.custom_FIFOin(i).bits := outer.customSlaveBits_Nodes(i).bundle
+    core.io.custom_FIFOin(i).valid := outer.customSlaveValid_Nodes(i).bundle
+    outer.customSlaveReady_Nodes(i).bundle := core.io.custom_FIFOin(i).ready
+    outer.customSlavebusy_Node(i).bundle := core.io.score_busy_out(i)
   }    
 
+  
   /*
   if(tileParams.hartId == 0 || tileParams.hartId == 4){
     for(i <- 0 until 3){
@@ -157,7 +160,7 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
     
   }
   */
-  //costom end
+  //custom end
 
   // Report unrecoverable error conditions; for now the only cause is cache ECC errors
   outer.reportHalt(List(outer.dcache.module.io.errors))
@@ -200,6 +203,8 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
     cmdRouter.get.io.in <> core.io.rocc.cmd
     cmdRouter.get.io.score_cdone_input := core.io.rocc.score_rece_done
     cmdRouter.get.io.mcore_running_input := core.io.rocc.mcore_runing
+    cmdRouter.get.io.score_rrf_input := core.io.rocc.score_recerf
+    cmdRouter.get.io.score_checkmode_in := core.io.rocc.score_checkmode
     outer.roccs.foreach(_.module.io.exception := core.io.rocc.exception)
     core.io.rocc.resp <> respArb.get.io.out
     core.io.rocc.busy <> (cmdRouter.get.io.busy || outer.roccs.map(_.module.io.busy).reduce(_ || _))
