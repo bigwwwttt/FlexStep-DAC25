@@ -225,17 +225,24 @@ abstract class BaseTile private (val crossing: ClockCrossingType, q: Parameters)
   protected val tlSlaveXbar = LazyModule(new TLXbar)
   protected val intXbar = LazyModule(new IntXbar)
 
-  //costom start
+  //custom start
   //Master FIFO Nodes
-  val costomMasterBits_Nodes: Seq[BundleBridgeSource[UInt]] = 
+  val customMasterBits_Nodes: Seq[BundleBridgeSource[UInt]] = 
       Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeSource[UInt](Some(() => GlobalParams.Data_type)))
   
-  val costomMasterValid_Nodes: Seq[BundleBridgeSource[Bool]] =
+  val customMasterValid_Nodes: Seq[BundleBridgeSource[Bool]] =
       Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeSource[Bool](Some(() => Bool())))
  
-  val costomMasterReady_Nodes: Seq[BundleBridgeSink[Bool]] = 
+  val customMasterReady_Nodes: Seq[BundleBridgeSink[Bool]] = 
       Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeSink[Bool](Some(() => Bool())))
 
+      
+  // connect busy singal
+  val customMasterbusy_Node: Seq[BundleBridgeSink[Bool]] = 
+      Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeSink[Bool](Some(() => Bool())))
+  val customSlavebusy_Node:  Seq[BundleBridgeSource[Bool]] =
+      Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeSource[Bool](Some(() => Bool())))
+ 
   /*
   val selectoutNode: Option[Seq[BundleBridgeSource[UInt]]] = if(tileParams.hartId == 0 || tileParams.hartId == 4)
                                                           Some(Seq.fill(3)(BundleBridgeSource[UInt](Some(() => UInt(16.W)))))
@@ -259,15 +266,14 @@ abstract class BaseTile private (val crossing: ClockCrossingType, q: Parameters)
                                                               None        
   */                                                                                                                                                               
   //Slave FIFO Nodes
-  val costomSlaveValid_Nodes: Seq[BundleBridgeSink[Bool]] = 
+  val customSlaveValid_Nodes: Seq[BundleBridgeSink[Bool]] = 
       Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeSink[Bool](Some(() => Bool())))
 
-  val costomSlaveBits_Nodes: Seq[BundleBridgeSink[UInt]] =
+  val customSlaveBits_Nodes: Seq[BundleBridgeSink[UInt]] =
       Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeSink[UInt](Some(() => GlobalParams.Data_type)))
 
-  val costomSlaveReady_Nodes: Seq[BundleBridgeSource[Bool]] = 
+  val customSlaveReady_Nodes: Seq[BundleBridgeSource[Bool]] = 
       Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeSource[Bool](Some(() => Bool())))
-
   /*
   val selectinNode: Option[BundleBridgeSink[UInt]] = if(tileParams.hartId != 0 && tileParams.hartId != 4)
                                                           Some(BundleBridgeSink[UInt](Some(() => UInt(16.W))))
@@ -290,7 +296,7 @@ abstract class BaseTile private (val crossing: ClockCrossingType, q: Parameters)
                                                             else
                                                               None 
   */                                                                                                                  
-  //costom end
+  //custom end
 
   /** Node for broadcasting a hart id to diplomatic consumers within the tile. */
   val hartIdNexusNode: BundleBridgeNode[UInt] = BundleBroadcast[UInt](registered = p(InsertTimingClosureRegistersOnHartIds))
