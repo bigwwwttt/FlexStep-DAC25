@@ -77,13 +77,17 @@ class CustomAcceleratorModule(outer: CustomAccelerator) extends LazyRoCCModuleIm
           }                                                                          
         }
       }.elsewhen(i.U < Num_Slavecores1){
-        finalsels1(HartId1(GlobalParams.Num_Groupcores.U - Num_Mastercores1))(HartId1(i)) := 1.U
+        when(i.U < Num_checkcore1){
+          finalsels1(HartId1(GlobalParams.Num_Groupcores.U - Num_Mastercores1))(HartId1(i)) := 1.U
+        }.otherwise{
+          finalsels1(HartId1(GlobalParams.Num_Groupcores.U - Num_Mastercores1))(HartId1(i)) := 0.U
+        }
         for(j <- 0 until GlobalParams.Num_Groupcores){
-            finalsels1(HartId1(GlobalParams.Num_Groupcores - i - 1))(j) := 0.U
+          finalsels1(HartId1(GlobalParams.Num_Groupcores - i - 1))(j) := 0.U
         } 
       }.otherwise{
         for(j <- 0 until GlobalParams.Num_Groupcores){
-            finalsels1(HartId1(GlobalParams.Num_Groupcores - i - 1))(j) := 0.U
+          finalsels1(HartId1(GlobalParams.Num_Groupcores - i - 1))(j) := 0.U
         }  
       }
       
@@ -103,6 +107,11 @@ class CustomAcceleratorModule(outer: CustomAccelerator) extends LazyRoCCModuleIm
           }
         }
       }.elsewhen(i.U < Num_Slavecores2){
+        when(i.U < Num_checkcore2){
+          finalsels2(HartId2(GlobalParams.Num_Groupcores.U - Num_Mastercores2) - 4.U)(HartId2(i) - 4.U) := 1.U
+        }.otherwise{
+          
+        }
         finalsels2(HartId2(GlobalParams.Num_Groupcores.U - Num_Mastercores2) - 4.U)(HartId2(i) - 4.U) := 1.U
         for(j <- 0 until GlobalParams.Num_Groupcores){
             finalsels2(HartId2(GlobalParams.Num_Groupcores - i - 1) - 4.U)(j) := 0.U
