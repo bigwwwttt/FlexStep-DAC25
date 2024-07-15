@@ -180,6 +180,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
 
   val rf_ready        = WireInit(false.B)
   val receiving_rf    = WireInit(false.B)//slave is receiving rf
+  val rf_sign         = WireInit(false.B)
   val rece_rf_done    = WireInit(false.B)
   val rf_apply_en     = WireInit(false.B)
   val rf_apply_data   = WireInit(0.U(64.W))
@@ -1180,7 +1181,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     mcore_check_done := true.B && isMaster
   }
 
-  when(ctrl_killd && wb_valid && wb_reg_valid){
+  when(wb_valid){
     intpc_reg := wb_npc
   }    
   
@@ -1716,7 +1717,8 @@ when(isGruop1){
     val mode_signe = rdata(15, 0) === "h_eeee".U
     val mode_signs = rdata === "h_aaaa".U
     //rf data
-    val rf_sign     = rdata(255, 253) === "b101".U
+    rf_sign     := rdata(255, 253) === "b101".U
+
     val rf_datatype = rdata(252, 251)
     val widx        = rdata(250, 246)
     val wrf_data    = rdata(63, 0)
@@ -1909,7 +1911,8 @@ when(isGruop1){
       val mode_signe = rdata(15, 0) === "h_eeee".U
       val mode_signs = rdata === "h_aaaa".U
       //rf data
-      val rf_sign     = rdata(255, 253) === "b101".U
+      rf_sign         := rdata(255, 253) === "b101".U
+      
       val rf_datatype = rdata(252, 251)
       val widx        = rdata(250, 246)
       val wrf_data    = rdata(63, 0)
