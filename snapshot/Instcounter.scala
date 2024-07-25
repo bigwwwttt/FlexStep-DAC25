@@ -17,6 +17,7 @@ class Instcounter extends Module{
      val score_check_complete   =    Output(Bool())
      val mcore_check_complete   =    Output(Bool())
      val CP_end                 =    Input(Bool())
+     val CP_mid                 =    Input(Bool())
      val Mchecke_call           =    Input(Bool())
      val instnum_threshold      =    Input(UInt(64.W))
      val exception              =    Input(Bool())
@@ -42,13 +43,13 @@ class Instcounter extends Module{
         //io.check_done := false.B
      }
 
-     when(io.Mchecke_call || io.exception){
+     when(io.Mchecke_call){
        io.mcore_check_complete := true.B
      }.otherwise{
        io.mcore_check_complete := false.B
      }
      
-     when(instnumber === (io.instnum_threshold - 1.U) && io.wb_valid){
+     when(((instnumber === io.instnum_threshold - 1.U) || ((instnumber === io.inst_left - 1.U) && io.CP_mid)) && io.wb_valid){
        io.check_done := true.B
      }.otherwise{
        io.check_done := false.B
