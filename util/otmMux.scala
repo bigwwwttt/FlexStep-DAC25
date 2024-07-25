@@ -26,8 +26,10 @@ class otmMux(num: Int) extends Module{
         when(io.sels(i)){
             io.free_out(i) := !io.busy_in(i)
             when(io.in.ready){
-                io.in.bits <> io.out(i).bits
-                io.in.valid <> io.out(i).valid
+                io.out(i).bits := io.in.bits
+                io.out(i).valid := io.in.valid
+                // io.in.bits <> io.out(i).bits
+                // io.in.valid <> io.out(i).valid
             }.otherwise{
                 io.out(i).valid := false.B
                 io.out(i).bits := 0.U
