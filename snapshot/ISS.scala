@@ -71,42 +71,49 @@ class ISS extends Module{
   dontTouch(testcoun)
   
   val seq_signal = RegInit(0.U(2.W))
-
+   
   val data_sign = RegInit("b101".U(3.W))
   dontTouch(data_sign)
   
   val int_coun = RegInit(0.U(5.W))
   val q_int_coun = Wire(UInt())
-  val int_codo = Wire(Bool())
+  //val int_codo = Wire(Bool())
   
   val fp_coun = RegInit(0.U(5.W))
   val q_fp_coun = Wire(UInt())
-  val fp_codo = Wire(Bool())
+  //val fp_codo = Wire(Bool())
 
   val rf_coun   = RegInit(0.U(5.W))
   val q_rf_coun = Wire(UInt())
   val rf_codo   = Wire(Bool())
-  
+
+  val past_coun = RegInit(0.U(5.W))
+  val past_codo   = Wire(Bool())
   //val codo = Wire(Bool())
   
   q_int_coun := int_coun
   q_fp_coun := fp_coun
   q_rf_coun := rf_coun
-  int_codo := (int_coun===31.U).asBool && (seq_signal === 1.U).asBool
-  fp_codo := (fp_coun===31.U).asBool && (seq_signal === 2.U).asBool
-  rf_codo := (rf_coun === 31.U) && (seq_signal === 1.U) && io.sent_valid
+  //int_codo := (int_coun===31.U).asBool && (seq_signal === 1.U).asBool
+  //fp_codo := (fp_coun===31.U).asBool && (seq_signal === 2.U).asBool
+  rf_codo   := (rf_coun === 31.U) && (seq_signal === 1.U) && io.sent_valid
+  past_codo := (past_coun === 3.U) && (seq_signal === 2.U) && io.sent_valid
   //codo := (seq_signal === 0.U).asBool
 
   io.sign := seq_signal
   when(io.sent_valid){
-     seq_signal := Mux(rf_codo, 0.U, seq_signal)
+     seq_signal := Mux(past_codo, 0.U, seq_signal)
      when(seq_signal === 0.U){
         io.sent_output := Cat(data_sign, seq_signal, 0.U(203.W), intpcreg, fpcsrreg)
-        seq_signal := seq_signal + 1.U
+        seq_signal     := seq_signal + 1.U
      }.elsewhen(seq_signal === 1.U){
-        rf_coun  := Mux(rf_codo, 0.U, rf_coun + 1.U)
-        int_coun := Mux(int_codo , 0.U,int_coun+1.U)
+        rf_coun        := Mux(rf_codo, 0.U, rf_coun + 1.U)
+        //int_coun := Mux(int_codo , 0.U,int_coun+1.U)
         io.sent_output := Cat(data_sign, seq_signal, rf_coun, 0.U(118.W), fpreg(q_rf_coun), intreg(q_rf_coun))
+        seq_signal     := Mux(rf_codo, seq_signal + 1.U, seq_signal)
+     }.elsewhen(seq_signal === 2.U){
+         io.sent_output := Cat(data_sign, seq_signal, 0.U(251.W))
+         past_coun      := Mux(past_codo, 0.U, past_coun + 1.U)
      }.otherwise{
         seq_signal := 0.U
         io.sent_output := 0.U 
@@ -115,7 +122,7 @@ class ISS extends Module{
      io.sent_output := 0.U
   }
   
-  when(rf_codo){
+  when(past_codo){
      io.sent_done := true.B
      seq_signal := 0.U
   }.otherwise{
