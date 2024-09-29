@@ -97,7 +97,7 @@ class ISS extends Module{
   //int_codo := (int_coun===31.U).asBool && (seq_signal === 1.U).asBool
   //fp_codo := (fp_coun===31.U).asBool && (seq_signal === 2.U).asBool
   rf_codo   := (rf_coun === 31.U) && (seq_signal === 1.U) && io.sent_valid
-  past_codo := (past_coun === 3.U) && (seq_signal === 2.U) && io.sent_valid
+  past_codo := (past_coun === 1.U) && (seq_signal === 2.U) && io.sent_valid
   //codo := (seq_signal === 0.U).asBool
 
   io.sign := seq_signal
