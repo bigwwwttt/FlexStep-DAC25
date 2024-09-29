@@ -25,6 +25,9 @@ class LogUnit(implicit p: Parameters) extends CoreModule()(p)
         val dmem_s2_data = Input(UInt(64.W))
         val csr_rw_rdata = Input(UInt(64.W))
 
+        // // for fprf tag
+        // val dmem_resp_tag = Input(UInt(5.W)) 
+
         val fifo_valid = Output(Bool())
         val fifo_data = Output(UInt(256.W))
 
