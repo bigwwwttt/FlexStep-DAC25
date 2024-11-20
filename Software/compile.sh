@@ -1,0 +1,1 @@
+riscv64-unknown-linux-gnu-gcc -static -Wl,-Ttext-segment,0x10000 -O3 -fno-strict-aliasing -lpthread -DSPEC_CPU_LP64 -c link.c
