@@ -372,13 +372,8 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   //                     VecInit(false.B, false.B, false.B, false.B)
   //                     )))
 
-  val reg_sels = RegInit(VecInit(Seq(
-                      VecInit(false.B, false.B, false.B, true.B),
-                      VecInit(false.B, false.B, true.B, false.B),
-                      VecInit(false.B, false.B, false.B, false.B),
-                      VecInit(false.B, false.B, false.B, false.B)
-                      )))
-  val reg_slavesels = RegInit(VecInit((0 until 4).map {i =>
+  val reg_sels = RegInit(VecInit(Seq.fill(GlobalParams.Num_Groupcores)(VecInit(Seq.fill(GlobalParams.Num_Groupcores)(false.B)))))
+  val reg_slavesels = RegInit(VecInit((0 until GlobalParams.Num_Groupcores).map {i =>
     Reverse(Cat(reg_sels.map(_(i))))
   }))
 
@@ -1656,9 +1651,9 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
         SlaveID(i) := nexttempID(GlobalParams.Num_Groupcores - i - 1)
       }
     }
-    reg_sels := VecInit((VecInit(Seq.tabulate(GlobalParams.Num_Groupcores){i => io.rocc.resp.bits.data(4 * (i + 1) - 1, 4 * i)})).map(k => VecInit(k.asBools)))
-    reg_slavesels := VecInit((0 until 4).map {i =>
-    Reverse(Cat(VecInit(((VecInit(Seq.tabulate(GlobalParams.Num_Groupcores){i => io.rocc.resp.bits.data(4 * (i + 1) - 1, 4 * i)})).map(k => VecInit(k.asBools)))).map(_(i))))
+    reg_sels := VecInit((VecInit(Seq.tabulate(GlobalParams.Num_Groupcores){i => io.rocc.resp.bits.data(GlobalParams.Num_Groupcores * (i + 1) - 1, GlobalParams.Num_Groupcores * i)})).map(k => VecInit(k.asBools)))
+    reg_slavesels := VecInit((0 until GlobalParams.Num_Groupcores).map {i =>
+    Reverse(Cat(VecInit(((VecInit(Seq.tabulate(GlobalParams.Num_Groupcores){i => io.rocc.resp.bits.data(GlobalParams.Num_Groupcores * (i + 1) - 1, GlobalParams.Num_Groupcores * i)})).map(k => VecInit(k.asBools)))).map(_(i))))
     })
   }
   //}
@@ -1833,7 +1828,7 @@ when(isMaster){
     otmmux.io.out(i).ready     := io.custom_FIFOout(i).ready
   }
   //io.custom_FIFOout   <> otmmux.io.out
-  otmmux.io.sels      := reg_sels(io.hartid)
+  otmmux.io.sels      := reg_sels(io.hartid % GlobalParams.Num_Groupcores.U)
   custom_reg          := custom_reg + io.hartid + 1.U
   mtomux.io.out.ready := false.B
   mtomux.io.busy_in   := true.B
@@ -1856,7 +1851,7 @@ when(isMaster){
     mtomux.io.in(i).bits      := io.custom_FIFOin(i).bits
     mtomux.io.in(i).valid     := io.custom_FIFOin(i).valid
   }
-  mtomux.io.sels := reg_slavesels(io.hartid).asBools
+  mtomux.io.sels := reg_slavesels(io.hartid % GlobalParams.Num_Groupcores.U).asBools
   
   rdata       := Mux(FIFO.io.empty, 0.U, FIFO.io.out.bits)
   //mode toggle

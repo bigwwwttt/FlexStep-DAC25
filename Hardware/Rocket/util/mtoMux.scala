@@ -6,21 +6,25 @@ import freechips.rocketchip.util.GlobalParams
 
 class mtoMux(num: Int) extends Module{
     val io = IO(new Bundle{
-        val out = Decoupled(GlobalParams.Data_type)
-        val busy_out = Vec(num, Output(Bool()))
-        val in = Flipped(Vec(num, Decoupled(GlobalParams.Data_type)))
-        val busy_in = Input(Bool())
-        val sels = Input(Vec(num, Bool()))
+        val out       = Decoupled(GlobalParams.Data_type)
+        val in        = Flipped(Vec(num, Decoupled(GlobalParams.Data_type)))
+        val busy_out  = Vec(num, Output(Bool()))
+        val busy_in   = Input(Bool())
+        val umode_out = Vec(num, Output(Bool()))
+        val umode_in  = Input(Bool())
+        val sels      = Input(Vec(num, Bool()))
     })
-    io.out.bits := Mux1H(io.sels, io.in.map(_.bits))
+    io.out.bits  := Mux1H(io.sels, io.in.map(_.bits))
     io.out.valid := Mux1H(io.sels, io.in.map(_.valid))
     for(i <- 0 until num){
         when(io.sels(i)){
-            io.in(i).ready := io.out.ready
-            io.busy_out(i) := io.busy_in
+            io.in(i).ready  := io.out.ready
+            io.busy_out(i)  := io.busy_in
+            io.umode_out(i) := io.umode_in
         }.otherwise{
-            io.in(i).ready := false.B
-            io.busy_out(i) := false.B
+            io.in(i).ready  := false.B
+            io.busy_out(i)  := false.B
+            io.umode_out(i) := false.B
         }
     }
 }

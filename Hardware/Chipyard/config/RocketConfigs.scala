@@ -11,8 +11,7 @@ import freechips.rocketchip.subsystem.WithCustomAccelerator
 // --------------
 
 class RocketConfig extends Config(
-  new freechips.rocketchip.subsystem.WithNBigCores(GlobalParams.Num_cores) ++         // single rocket-core
-  //new freechips.rocketchip.subsystem.WithRoccExample ++
+  new freechips.rocketchip.subsystem.WithNBigCores(GlobalParams.Num_cores) ++         // number of rocket-core
   new freechips.rocketchip.subsystem.WithCustomAccelerator ++
   new chipyard.config.AbstractConfig)
 

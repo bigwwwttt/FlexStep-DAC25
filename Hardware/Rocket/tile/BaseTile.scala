@@ -243,6 +243,11 @@ abstract class BaseTile private (val crossing: ClockCrossingType, q: Parameters)
   val customSlavebusy_Node:  Seq[BundleBridgeSource[Bool]] =
       Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeSource[Bool](Some(() => Bool())))
  
+  // connect umode signal
+  val customMasterumode_Node: Seq[BundleBridgeSink[Bool]] = 
+      Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeSink[Bool](Some(() => Bool())))
+  val customSlaveumode_Node:  Seq[BundleBridgeSource[Bool]] =
+      Seq.fill(GlobalParams.Num_Groupcores)(BundleBridgeSource[Bool](Some(() => Bool())))
   /*
   val selectoutNode: Option[Seq[BundleBridgeSource[UInt]]] = if(tileParams.hartId == 0 || tileParams.hartId == 4)
                                                           Some(Seq.fill(3)(BundleBridgeSource[UInt](Some(() => UInt(16.W)))))

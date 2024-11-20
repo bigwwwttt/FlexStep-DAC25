@@ -5,19 +5,22 @@ import chisel3.util._
 
 class SyncFIFO[T <: Data](ioType: T, depth: Int) extends Module {
   val io = IO(new Bundle {
-    val in = Flipped(Decoupled(ioType))
-    val out = Decoupled(ioType)
-    val almostfull = Output(Bool())
-    val count = Output(UInt((log2Ceil(depth) + 1).W))
-    val full = Output(Bool())
-    val empty = Output(Bool())
-    val widx = Output(UInt((log2Ceil(depth)).W))
-    val ridx = Output(UInt((log2Ceil(depth)).W))
+    val in            = Flipped(Decoupled(ioType))
+    val out           = Decoupled(ioType)
+    val almostfull    = Output(Bool())
+    val almostempty   = Output(Bool())
+    val count         = Output(UInt((log2Ceil(depth) + 1).W))
+    val full          = Output(Bool())
+    val empty         = Output(Bool())
+    val widx          = Output(UInt((log2Ceil(depth)).W))
+    val ridx          = Output(UInt((log2Ceil(depth)).W))
   })
   require(depth > 0 && isPow2(depth))
 
   val queue = Module(new Queue(ioType, depth, false, false, true, false))
-  val almostfull = queue.io.count >= depth.U - 5.U
+  val almostfull   = queue.io.count >= depth.U - 4.U
+  val almostempty  = queue.io.count <= 1.U
+
   queue.io.enq.bits  := io.in.bits
   queue.io.enq.valid := io.in.valid
   io.in.ready        := queue.io.enq.ready
@@ -38,10 +41,11 @@ class SyncFIFO[T <: Data](ioType: T, depth: Int) extends Module {
   io.widx := Counter(io.in.valid && io.in.ready && !io.full, depth)._1
   io.ridx := Counter(io.out.valid && io.out.ready && !io.empty, depth)._1
 
-  io.full := queue.io.count === depth.U
-  io.empty := queue.io.count === 0.U
-  io.almostfull := almostfull
-  io.count := queue.io.count
+  io.full         := queue.io.count === depth.U
+  io.empty        := queue.io.count === 0.U
+  io.almostfull   := almostfull
+  io.almostempty  := almostempty
+  io.count        := queue.io.count
 }
 
 

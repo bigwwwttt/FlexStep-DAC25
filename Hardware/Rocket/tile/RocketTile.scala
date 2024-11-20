@@ -128,15 +128,17 @@ class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
 
   //custom start
   for(i <- 0 until GlobalParams.Num_Groupcores){
-    outer.customMasterBits_Nodes(i).bundle := core.io.custom_FIFOout(i).bits
+    outer.customMasterBits_Nodes(i).bundle  := core.io.custom_FIFOout(i).bits
     outer.customMasterValid_Nodes(i).bundle := core.io.custom_FIFOout(i).valid
-    core.io.custom_FIFOout(i).ready := outer.customMasterReady_Nodes(i).bundle
-    core.io.score_busy_in(i) := outer.customMasterbusy_Node(i).bundle
+    core.io.custom_FIFOout(i).ready         := outer.customMasterReady_Nodes(i).bundle
+    core.io.score_busy_in(i)                := outer.customMasterbusy_Node(i).bundle
+    core.io.score_umode_in(i)               := outer.customMasterumode_Node(i).bundle
 
     core.io.custom_FIFOin(i).bits := outer.customSlaveBits_Nodes(i).bundle
     core.io.custom_FIFOin(i).valid := outer.customSlaveValid_Nodes(i).bundle
     outer.customSlaveReady_Nodes(i).bundle := core.io.custom_FIFOin(i).ready
     outer.customSlavebusy_Node(i).bundle := core.io.score_busy_out(i)
+    outer.customSlaveumode_Node(i).bundle := core.io.score_umode_out(i)
   }    
 
   
