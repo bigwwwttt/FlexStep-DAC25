@@ -1,0 +1,45 @@
+#-----------------------------------------------------------
+# Vivado Lab Edition v2023.1 (64-bit)
+# SW Build 3865809 on Sun May  7 15:04:56 MDT 2023
+# 
+# 
+# Start of session at: Tue Jul  9 14:44:01 2024
+# Process ID: 1743949
+# Current directory: /home/wtl/parsec_gc
+# Command line: vivado_lab
+# Log file: /home/wtl/parsec_gc/vivado_lab.log
+# Journal file: /home/wtl/parsec_gc/vivado_lab.jou
+# Running On: devjz-ubt20-s01, OS: Linux, CPU Frequency: 1500.000 MHz, CPU Physical cores: 32, Host memory: 540557 MB
+#-----------------------------------------------------------
+start_gui
+open_hw_manager
+connect_hw_server -allow_non_jtag
+INFO: [Labtools 27-2285] Connecting to hw_server url TCP:localhost:3121
+INFO: [Labtools 27-2222] Launching hw_server...
+INFO: [Labtools 27-2221] Launch Output:
+
+****** Xilinx hw_server v2023.1
+  **** Build date : May  7 2023 at 15:13:34
+    ** Copyright 1986-2022 Xilinx, Inc. All Rights Reserved.
+
+
+INFO: [Labtools 27-3415] Connecting to cs_server url TCP:localhost:0
+INFO: [Labtools 27-3417] Launching cs_server...
+INFO: [Labtools 27-2221] Launch Output:
+
+
+******** Xilinx cs_server v2023.1.0
+  ****** Build date   : Apr 10 2023-23:59:24
+    **** Build number : 2023.1.1681142364
+      ** Copyright 2017-2022 Xilinx, Inc. All Rights Reserved.
+      ** Copyright 2022-2024 Advanced Micro Devices, Inc. All Rights Reserved.
+
+
+
+open_hw_target
+INFO: [Labtoolstcl 44-466] Opening hw_target localhost:3121/xilinx_tcf/Xilinx/21770433G001A
+current_hw_device [get_hw_devices xcu280_u55c_0]
+refresh_hw_device -update_hw_probes false [lindex [get_hw_devices xcu280_u55c_0] 0]
+INFO: [Labtools 27-2302] Device xcu280_u55c (JTAG device index = 0) is programmed with a design that has 1 MIG core(s).
+exit
+INFO: [Common 17-206] Exiting vivado_lab at Tue Jul  9 14:45:18 2024...

@@ -1,0 +1,25 @@
+#-----------------------------------------------------------
+# Vivado v2021.1 (64-bit)
+# SW Build 3247384 on Thu Jun 10 19:36:07 MDT 2021
+# IP Build 3246043 on Fri Jun 11 00:30:35 MDT 2021
+# Start of session at: Tue Jul  9 11:48:20 2024
+# Process ID: 1694992
+# Current directory: /home/wtl/parsec_gc
+# Command line: vivado
+# Log file: /home/wtl/parsec_gc/vivado.log
+# Journal file: /home/wtl/parsec_gc/vivado.jou
+#-----------------------------------------------------------
+start_gui
+open_hw_manager
+INFO: [IP_Flow 19-234] Refreshing IP repositories
+INFO: [IP_Flow 19-1704] No user IP repositories specified
+INFO: [IP_Flow 19-2313] Loaded Vivado IP repository '/tools/Xilinx/Vivado/2021.1/data/ip'.
+connect_hw_server -allow_non_jtag
+INFO: [Labtools 27-2285] Connecting to hw_server url TCP:localhost:3121
+INFO: [Common 17-41] Interrupt caught. Command should exit soon.
+ERROR: [Labtools 27-3419] Disconnecting from hw_server since it's not responding to requests.  It is recommended to investigate hw_server to find any issues.
+INFO: [Labtools 27-2058] connect_hw_server command cancelled.
+connect_hw_server: Time (s): cpu = 00:00:01 ; elapsed = 00:00:21 . Memory (MB): peak = 7907.898 ; gain = 8.074 ; free physical = 325285 ; free virtual = 486032
+INFO: [Common 17-344] 'connect_hw_server' was cancelled
+exit
+INFO: [Common 17-206] Exiting Vivado at Tue Jul  9 11:49:08 2024...

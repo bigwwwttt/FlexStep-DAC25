@@ -235,7 +235,7 @@ int main (int argc, char *argv[])
 {
 	stimer_t tmr;
 	int ret, i;
-
+	
 #ifdef PARSEC_VERSION
 #define __PARSEC_STRING(x) #x
 #define __PARSEC_XSTRING(x) __PARSEC_STRING(x)
@@ -254,7 +254,6 @@ int main (int argc, char *argv[])
 		printf("%s <database> <table> <query dir> <top K> <depth> <n> <out>\n", argv[0]); 
 		return 0;
 	}
-
 	db_dir = argv[1];
 	table_name = argv[2];
 	query_dir = argv[3];
@@ -321,7 +320,6 @@ int main (int argc, char *argv[])
 	image_cleanup();
 
 	fclose(fout);
-
 #ifdef ENABLE_PARSEC_HOOKS
 	__parsec_bench_end();
 #endif

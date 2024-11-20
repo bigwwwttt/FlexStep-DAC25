@@ -1,0 +1,1 @@
+riscv64-unknown-linux-gnu-objdump -d /home/wtl/parsec_gc/pkgs/apps/fluidanimate/inst/amd64-linux.gcc-serial/bin/fluidanimate >/home/wtl/parsec_gc/pkgs/apps/fluidanimate/inst/amd64-linux.gcc-serial/bin/fluidanimate.dump

@@ -1212,7 +1212,6 @@ int main(int argc, char *argv[])
 #ifdef ENABLE_PARSEC_HOOKS
   __parsec_bench_begin(__parsec_fluidanimate);
 #endif
-
   if(argc < 4 || argc >= 6)
   {
     std::cout << "Usage: " << argv[0] << " <threadnum> <framenum> <.fluid input file> [.fluid output file]" << std::endl;

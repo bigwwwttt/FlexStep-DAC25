@@ -6,14 +6,17 @@
 // 
 // Reference Source: Options, Futures, and Other Derivatives, 3rd Edition, Prentice 
 // Hall, John C. Hull,
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <string.h>
 
-// extern void gcStartup (void);
-// extern void gcCleanup (void);
+#include "spin_lock.h"
+
+
+  int uart_lock;
+  
+
 
 #ifdef ENABLE_PARSEC_HOOKS
 #include <hooks.h>
@@ -317,15 +320,16 @@ int bs_thread(void *tid_ptr) {
 
 int main (int argc, char **argv)
 {
-    // gcStartup ();
-
+  // gcStartup ();
+    lock_acquire(&uart_lock);
+    printf("get start!\n");
+    lock_release(&uart_lock);
     FILE *file;
     int i;
     int loopnum;
     fptype * buffer;
     int * buffer2;
     int rv;
-
 #ifdef PARSEC_VERSION
 #define __PARSEC_STRING(x) #x
 #define __PARSEC_XSTRING(x) __PARSEC_STRING(x)
@@ -341,7 +345,9 @@ int main (int argc, char **argv)
 
    if (argc != 4)
         {
+                lock_acquire(&uart_lock);
                 printf("Usage:\n\t%s <nthreads> <inputFile> <outputFile>\n", argv[0]);
+                lock_release(&uart_lock);
                 exit(1);
         }
     nThreads = atoi(argv[1]);
@@ -351,23 +357,31 @@ int main (int argc, char **argv)
     //Read input data from file
     file = fopen(inputFile, "r");
     if(file == NULL) {
+      lock_acquire(&uart_lock);
       printf("ERROR: Unable to open file `%s'.\n", inputFile);
+      lock_release(&uart_lock);
       exit(1);
     }
     rv = fscanf(file, "%i", &numOptions);
     if(rv != 1) {
+      lock_acquire(&uart_lock);
       printf("ERROR: Unable to read from file `%s'.\n", inputFile);
+      lock_release(&uart_lock);
       fclose(file);
       exit(1);
     }
     if(nThreads > numOptions) {
+      lock_acquire(&uart_lock);
       printf("WARNING: Not enough work, reducing number of threads to match number of options.\n");
+      lock_release(&uart_lock);
       nThreads = numOptions;
     }
 
 #if !defined(ENABLE_THREADS) && !defined(ENABLE_OPENMP) && !defined(ENABLE_TBB)
     if(nThreads != 1) {
+        lock_acquire(&uart_lock);
         printf("Error: <nthreads> must be 1 (serial version)\n");
+        lock_release(&uart_lock);
         exit(1);
     }
 #endif
@@ -379,22 +393,28 @@ int main (int argc, char **argv)
     {
         rv = fscanf(file, "%f %f %f %f %f %f %c %f %f", &data[loopnum].s, &data[loopnum].strike, &data[loopnum].r, &data[loopnum].divq, &data[loopnum].v, &data[loopnum].t, &data[loopnum].OptionType, &data[loopnum].divs, &data[loopnum].DGrefval);
         if(rv != 9) {
+          lock_acquire(&uart_lock);
           printf("ERROR: Unable to read from file `%s'.\n", inputFile);
+          lock_release(&uart_lock);
           fclose(file);
           exit(1);
         }
     }
     rv = fclose(file);
     if(rv != 0) {
+      lock_acquire(&uart_lock);
       printf("ERROR: Unable to close file `%s'.\n", inputFile);
+      lock_release(&uart_lock);
       exit(1);
     }
+    
 
 #ifdef ENABLE_THREADS
     MAIN_INITENV(,8000000,nThreads);
 #endif
     printf("Num of Options: %d\n", numOptions);
     printf("Num of Runs: %d\n", NUM_RUNS);
+
 #define PAD 256
 #define LINESIZE 64
 
@@ -416,9 +436,9 @@ int main (int argc, char **argv)
         volatility[i] = data[i].v;    
         otime[i]      = data[i].t;
     }
-
     printf("Size of data: %d\n", numOptions * (sizeof(OptionData) + sizeof(int)));
-
+    
+    //start_tracing();
 #ifdef ENABLE_PARSEC_HOOKS
     __parsec_roi_begin();
 #endif
@@ -476,26 +496,34 @@ int main (int argc, char **argv)
     //Write prices to output file
     file = fopen(outputFile, "w");
     if(file == NULL) {
+      lock_acquire(&uart_lock);
       printf("ERROR: Unable to open file `%s'.\n", outputFile);
+      lock_release(&uart_lock);
       exit(1);
     }
     rv = fprintf(file, "%i\n", numOptions);
     if(rv < 0) {
+      lock_acquire(&uart_lock);
       printf("ERROR: Unable to write to file `%s'.\n", outputFile);
+      lock_release(&uart_lock);
       fclose(file);
       exit(1);
     }
     for(i=0; i<numOptions; i++) {
       rv = fprintf(file, "%.18f\n", prices[i]);
       if(rv < 0) {
+        lock_acquire(&uart_lock);
         printf("ERROR: Unable to write to file `%s'.\n", outputFile);
+        lock_release(&uart_lock);
         fclose(file);
         exit(1);
       }
     }
     rv = fclose(file);
     if(rv != 0) {
+      lock_acquire(&uart_lock);
       printf("ERROR: Unable to close file `%s'.\n", outputFile);
+      lock_release(&uart_lock);
       exit(1);
     }
 
@@ -509,7 +537,13 @@ int main (int argc, char **argv)
     __parsec_bench_end();
 #endif
 
-    // gcCleanup ();
+    //gcCleanup ();
+    // printf("helloworld again from mastercore 0\n");
+    // printf("All Done!\n");
+
+    //pthread_join(tidp, NULL);
+    
+    //while (ret[0] != 1 || ret[1] != 1 || ret[2] != 1){}
     return 0;
 }
 

@@ -1,0 +1,17 @@
+{
+    "files.watcherExclude": {
+        "**/target": true
+    },
+    "files.associations": {
+        "sched.h": "c",
+        "stat.h": "c",
+        "iostream": "cpp",
+        "unistd.h": "c",
+        "string.h": "c",
+        "math.h": "c",
+        "hooks.h": "c",
+        "*.in": "cpp",
+        "memory_resource": "cpp",
+        "ostream": "cpp"
+    }
+}

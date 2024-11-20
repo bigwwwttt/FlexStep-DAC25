@@ -29,6 +29,11 @@ Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 #include "../include/cass_timer.h"
 #include "../image/image.h"
 #include "ferret-tbb.h"
+#define _GNU_SOURCE
+#include <sched.h>
+#include <errno.h>
+#include "rocc.h"
+#include "custom.h"
 
 
 #ifdef ENABLE_PARSEC_HOOKS

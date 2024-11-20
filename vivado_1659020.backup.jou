@@ -1,0 +1,13 @@
+#-----------------------------------------------------------
+# Vivado v2021.1 (64-bit)
+# SW Build 3247384 on Thu Jun 10 19:36:07 MDT 2021
+# IP Build 3246043 on Fri Jun 11 00:30:35 MDT 2021
+# Start of session at: Tue Jul  9 11:43:55 2024
+# Process ID: 1659020
+# Current directory: /home/wtl/parsec_gc
+# Command line: vivado
+# Log file: /home/wtl/parsec_gc/vivado.log
+# Journal file: /home/wtl/parsec_gc/vivado.jou
+#-----------------------------------------------------------
+start_gui
+open_hw_manager
