@@ -1,0 +1,1 @@
+riscv64-unknown-linux-gnu-objdump -d /home/wtl/parsec_gc/pkgs/apps/swaptions/inst/amd64-linux.gcc-serial/bin/swaptions >/home/wtl/parsec_gc/pkgs/apps/swaptions/inst/amd64-linux.gcc-serial/bin/swaptions.dump

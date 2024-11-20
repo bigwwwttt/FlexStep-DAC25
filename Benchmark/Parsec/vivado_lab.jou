@@ -1,0 +1,19 @@
+#-----------------------------------------------------------
+# Vivado Lab Edition v2023.1 (64-bit)
+# SW Build 3865809 on Sun May  7 15:04:56 MDT 2023
+# 
+# 
+# Start of session at: Tue Jul  9 14:44:01 2024
+# Process ID: 1743949
+# Current directory: /home/wtl/parsec_gc
+# Command line: vivado_lab
+# Log file: /home/wtl/parsec_gc/vivado_lab.log
+# Journal file: /home/wtl/parsec_gc/vivado_lab.jou
+# Running On: devjz-ubt20-s01, OS: Linux, CPU Frequency: 1500.000 MHz, CPU Physical cores: 32, Host memory: 540557 MB
+#-----------------------------------------------------------
+start_gui
+open_hw_manager
+connect_hw_server -allow_non_jtag
+open_hw_target
+current_hw_device [get_hw_devices xcu280_u55c_0]
+refresh_hw_device -update_hw_probes false [lindex [get_hw_devices xcu280_u55c_0] 0]
