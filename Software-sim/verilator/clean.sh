@@ -1,0 +1,1 @@
+rm -rf test.o test.riscv test.dump
