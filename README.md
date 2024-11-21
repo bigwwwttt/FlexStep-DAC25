@@ -8,3 +8,8 @@ simple OS-level scheduling codes. Here we will introduce how to implement FlexSt
 ## Setup
 The setup of chipyard can refer to the tutorial https://chipyard.readthedocs.io/en/1.11.0/Chipyard-Basics/index.html 
 and the FPGA simulation tool firesim can refer to https://docs.fires.im/en/latest/FireSim-Basics.html according to your FPGA model.
+
+## Hardware 
+After the setup, you can replace all files in /your_path/chipyard/generators/rocket-chip/src/main/scala 
+and /your_path/chipyard/generators/chipyard/src/main/scala with files in /Hardware/Rocket including the source codes of Rocket-core microarchitecture
+and /Hardware/Chipyard including the configuration of Rocket-chip, respectively.
