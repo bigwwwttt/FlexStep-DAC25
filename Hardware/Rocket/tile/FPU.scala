@@ -205,7 +205,11 @@ class FPUCoreIO(implicit p: Parameters) extends CoreBundle()(p) {
   val sboard_clra = Output(UInt(5.W))
 
   val keep_clock_enabled = Input(Bool())
-  val frf = Output(Vec(32, UInt(64.W)))
+  val copyidx = Input(UInt(3.W))
+  // val frf = Output(Vec(32, UInt(64.W)))
+  val compidx   = Input(UInt(5.W))
+  val frf_comp  = Output(UInt(64.W))
+  val frf_test = Output(Vec(4, UInt(64.W)))
   val fpu_inflight = Output(Bool())
 
   val apply_bits = Input(UInt(fLen.W))
@@ -813,9 +817,13 @@ class FPU(cfg: FPUParams)(implicit p: Parameters) extends FPUModule()(p) {
   }
 
   //read
-  for (i <-0 until 32) { 
-    io.frf(i) := ieee(regfile(i))
+  // for (i <-0 until 32) { 
+  //   io.frf(i) := ieee(regfile(i))
+  // }
+  for (i <-0 until 4) { 
+    io.frf_test(i) := ieee(regfile(io.copyidx * 4.U + i.U))
   }
+  io.frf_comp := ieee(regfile(io.compidx))
   dontTouch(io.apply_en)
   when(io.apply_en){
     val apply_type = Mux(io.apply_bits(63, 32) === "hFFFFFFFF".U, 0.U, 1.U)
@@ -1028,7 +1036,7 @@ class FPU(cfg: FPUParams)(implicit p: Parameters) extends FPUModule()(p) {
     }
 
     when (divSqrt_killed) { divSqrt_inFlight := false.B }
-    io.fpu_inflight := divSqrt_inFlight || divSqrt_inValid || divSqrt_wen || (wen =/= 0.U)
+    io.fpu_inflight := divSqrt_inFlight || divSqrt_inValid || divSqrt_wen || (wen =/= 0.U) || load_wb
   } else {
     when (id_ctrl.div || id_ctrl.sqrt) { io.illegal_rm := true.B }
   }
