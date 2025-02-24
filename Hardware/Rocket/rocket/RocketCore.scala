@@ -14,7 +14,6 @@ import freechips.rocketchip.scie._
 import scala.collection.mutable.ArrayBuffer
 import freechips.rocketchip.diplomacy.LazyModule
 import org.yaml.snakeyaml.events.Event.ID
-import freechips.rocketchip.aabb._
 
 import freechips.rocketchip.snapshot._
 import org.w3c.dom.css
