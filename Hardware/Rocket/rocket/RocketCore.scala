@@ -14,6 +14,7 @@ import freechips.rocketchip.scie._
 import scala.collection.mutable.ArrayBuffer
 import freechips.rocketchip.diplomacy.LazyModule
 import org.yaml.snakeyaml.events.Event.ID
+import freechips.rocketchip.aabb._
 
 import freechips.rocketchip.snapshot._
 import org.w3c.dom.css
@@ -130,9 +131,11 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   def nTotalRoCCCSRs = tile.roccCSRs.flatten.size
 
   //custom Module and Reg define
-  val FIFO       = Module(new SyncFIFO(GlobalParams.Data_type, GlobalParams.depth))
-  val otmmux     = Module(new otmMux(GlobalParams.Num_Groupcores))
-  val mtomux     = Module(new mtoMux(GlobalParams.Num_Groupcores))
+  val FIFO        = Module(new SyncFIFO(GlobalParams.Data_type, GlobalParams.depth))
+  val otmmux      = Module(new otmMux(GlobalParams.Num_Groupcores))
+  val mtomux      = Module(new mtoMux(GlobalParams.Num_Groupcores))
+  val my_log_unit = Module(new LogUnit()(p))
+  //val add         = Module(new test())
   // val test_fifo  = Module(new HellaQueue(16)(UInt(32.W)))
   // val test_fifo1 = Module(new HellaQueue(16)(UInt(32.W)))
 
@@ -151,9 +154,10 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   
   val counter = RegInit(0.U(32.W))
 
-  val Mcheck_call = WireInit(false.B)//mcore call for starting checking
+  val Mcheck_call  = WireInit(false.B)//mcore call for starting checking
   val Mchecke_call = WireInit(false.B)//mcore call for ending checking
   val Mcheck_end   = WireInit(false.B)
+  val Scheck_end   = WireInit(false.B)
 
   val Srecode_call           = WireInit(false.B)//score call for recoding context and npc
   val score_apply            = WireInit(false.B)//score call for receving rf
@@ -162,12 +166,16 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val mcore_checking         = RegInit(false.B)//indicate mcore is between two CPs
   val check_busy             = RegInit(false.B)//indicate score is checking
   
+  val sp = RegInit(0.U(xLen.W))
+  val tp = RegInit(0.U(xLen.W))
+  val t0 = RegInit(0.U(xLen.W))  
 
   val score_return_pc = RegInit(0.U(40.W))
 
-  val mcore_check_done = RegInit(false.B)
-  val score_check_done = RegInit(false.B)
-  val score_comp_done  = RegInit(false.B)
+  val mcore_check_done        = RegInit(false.B)
+  val mcore_check_done_common = RegInit(false.B)
+  val score_check_done        = RegInit(false.B)
+  val score_comp_done         = RegInit(false.B)
 
   val score_return_rf  = RegInit(false.B)
   val score_check_left = RegInit(0.U(64.W)) 
@@ -178,7 +186,8 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   
 
   val check_mode  = RegInit(true.B)//indicate score is at check mode
-  val user_mode = task_monitor.trace_priv === PRV.U.U
+  val user_mode = task_monitor.trace_priv === PRV.M.U
+  val slave_is_umode = WireInit(false.B)
   
   val jump_pc = RegInit(0.U(64.W))//the pc that score jump for
 
@@ -203,12 +212,13 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val mode_signe = WireInit(false.B)// end check
   val mode_signs = WireInit(false.B)// start check
   val mode_signc = WireInit(false.B)// task change
+  val inst_left  = WireInit(0.U(64.W))
 
   val pc_sign    = WireInit(false.B)
   val past_sign  = WireInit(false.B)
   //rf data
   val rf_datatype = WireInit(0.U(2.W))
-  val widx        = WireInit(0.U(5.W))
+  val widx        = WireInit(13.U(5.W))
   val wrf_data    = WireInit(0.U(64.W))
   val wfprf_data  = WireInit(0.U(64.W))
   //ls data
@@ -228,7 +238,15 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
 
   val csr_apply_en = WireInit(false.B)
 
-  val fcsr_out = RegInit(0.U(8.W))
+  val fcsr_out = WireInit(0.U(8.W))
+
+  val sc_undone = RegInit(false.B)
+  val sc_cond   = RegInit(1.U(64.W))
+
+  val sentdone_butuncheck = RegInit(false.B)
+
+  val imem_req_pc = RegInit(0.U(40.W))
+  val imem_req_pc_test = RegInit(0.U(40.W))
  
   dontTouch(receiving_rf)
   dontTouch(rece_rf_done)
@@ -248,6 +266,10 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   dontTouch(score_check_left)
   dontTouch(score_return_pc)
   dontTouch(past_sign)
+  dontTouch(slave_is_umode)
+  dontTouch(sc_undone)
+  dontTouch(sc_cond)
+  dontTouch(csr_apply_en)
   // dontTouch(trace_priv)
   // dontTouch(trace_priv_next)
   // dontTouch(trace_ppn)
@@ -259,12 +281,12 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val custom_regbool = RegInit(false.B)
   val slave_rece_en = RegInit(false.B)
   
-  val HartID = VecInit(GlobalParams.List_hartid.map(_.U))
+  //val HartID = VecInit(GlobalParams.List_hartid.map(_.U))
   // val HartID1 = VecInit(GlobalParams.List_hartid1.map(_.U))
   // val HartID2 = VecInit(GlobalParams.List_hartid2.map(_.U))
   // dontTouch(HartID1)
   // dontTouch(HartID2)
-  dontTouch(HartID)
+  //dontTouch(HartID)
 
   // val NumMaster = if(GlobalParams.List_hartid.contains(tileParams.hartId)) 
   //                   RegInit(GlobalParams.Num_Mastercores.U(4.W))
@@ -292,13 +314,13 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   // val isGruop1           = HartID1.contains(io.hartid)
   // val isGruop2           = HartID2.contains(io.hartid)
 
-  val isMaster           = MasterID.contains(io.hartid)
-  val isSlave            = SlaveID.contains(io.hartid)
+  val isMaster           = MasterID.contains(io.hartid % GlobalParams.Num_Groupcores.U)
+  val isSlave            = SlaveID.contains(io.hartid % GlobalParams.Num_Groupcores.U)
   val MFIFO_almostfull   = isMaster && FIFO.io.almostfull
-  val SFIFO_empty        = isSlave && FIFO.io.empty
+  val SFIFO_almostempty  = isSlave && FIFO.io.almostempty
   val mulicheckcore_mode = (NumMaster < NumSlave)
 
-  val score_return     = score_check_done && score_comp_done && isSlave
+  val score_return     = score_check_done && score_comp_done && isSlave && user_mode
   dontTouch(score_return)
   val mcore_free             = RegInit(VecInit(Seq.fill(GlobalParams.Num_Groupcores)(false.B)))//indicate mcore's scores are checking
   val mcore_check_free       = mcore_free.reduce(_ && _) && isMaster
@@ -309,16 +331,25 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   //tw'sdefinition
   val instcoun = Module(new Instcounter())
   val isa = Module(new ISS())
-  val copyvalid  = RegInit(false.B)
+  val copyvalid       = RegInit(false.B)
+  val copyvalid_test  = RegInit(false.B)
   val rf_sentvalid  = RegInit(false.B)
-  val q_copyvalid = Wire(Bool())  
+  val rf_sentvalid_test  = RegInit(false.B)
+  val q_copyvalid = Wire(Bool())
+  val q_copyvalid_test = Wire(Bool())  
   dontTouch(rf_sentvalid)
+  dontTouch(rf_sentvalid_test)
   
-  val en_copyvalid = Wire(Bool())
+  //val en_copyvalid = Wire(Bool())
+  val en_copyvalid_test = Wire(Bool())
   val pc_reg = RegInit(0.U(40.W))
   val intpc_reg = RegInit(0.U(40.W))
   val fsign = RegInit(true.B)
+  val fsign_test = RegInit(true.B)
   dontTouch(fsign)
+  dontTouch(copyvalid_test)
+  dontTouch(q_copyvalid_test)
+  dontTouch(en_copyvalid_test)
   
   val sbo = Wire(Vec(33,Bool()))
   val fp_sbo = Wire(Vec(33,Bool()))
@@ -344,7 +375,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   dontTouch(isMaster)
   dontTouch(isSlave)
   dontTouch(MFIFO_almostfull)
-  dontTouch(SFIFO_empty)
+  dontTouch(SFIFO_almostempty)
   /*                  
   val NumMaster1 = RegInit(GlobalParams.Num_Mastercores1.U(4.W))
   val NumSlave1 = RegInit(GlobalParams.Num_Slavecores1.U(4.W))
@@ -415,14 +446,14 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   dontTouch(NumSlave)
   dontTouch(MasterID)
   dontTouch(SlaveID)
-  dontTouch(io.numMasterin)
-  dontTouch(io.numMasterout)
-  dontTouch(io.numSlavein)
-  dontTouch(io.numSlaveout)
-  dontTouch(io.MasterIDin)
-  dontTouch(io.MasterIDout)
-  dontTouch(io.SlaveIDin)
-  dontTouch(io.SlaveIDout)
+  // dontTouch(io.numMasterin)
+  // dontTouch(io.numMasterout)
+  // dontTouch(io.numSlavein)
+  // dontTouch(io.numSlaveout)
+  // dontTouch(io.MasterIDin)
+  // dontTouch(io.MasterIDout)
+  // dontTouch(io.SlaveIDin)
+  // dontTouch(io.SlaveIDout)
   dontTouch(have_jumped)
   dontTouch(ls_sign)
   dontTouch(ls_inst)
@@ -528,9 +559,10 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     Seq(new IDecode(aluFn))
   } flatMap(_.table)
 
-  val ex_ctrl = Reg(new IntCtrlSigs(aluFn))
-  val mem_ctrl = Reg(new IntCtrlSigs(aluFn))
-  val wb_ctrl = Reg(new IntCtrlSigs(aluFn))
+  val ex_ctrl     = Reg(new IntCtrlSigs(aluFn))
+  val mem_ctrl    = Reg(new IntCtrlSigs(aluFn))
+  val wb_ctrl     = Reg(new IntCtrlSigs(aluFn))
+  val comit_ctrl  = Reg(new IntCtrlSigs(aluFn))
 
   val ex_reg_xcpt_interrupt  = Reg(Bool())
   val ex_reg_valid           = Reg(Bool())
@@ -592,6 +624,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val wb_reg_rs2 = Reg(Bits())
   val take_pc_wb = Wire(Bool())
   val wb_reg_wphit           = Reg(Vec(nBreakpoints, Bool()))
+  //val wb_npc_test = Reg(UInt())
 
   val take_pc_mem_wb = take_pc_wb || take_pc_mem
   val take_pc = take_pc_mem_wb
@@ -604,7 +637,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val fifo_ready = !FIFO.io.empty && FIFO.io.out.bits(255, 224) === "h_dead_beef".U //&& FIFO.io.out.bits(223, 192) === ex_reg_inst
   //val check_req_ex_ready = fifo_ready && isSlave && FIFO.io.out.bits(223, 192) === (if(usingCompressed) Cat(Mux(ex_reg_raw_inst(1, 0).andR, ex_reg_inst >> 16, 0.U), ex_reg_raw_inst(15, 0)) else ex_reg_inst)
   val check_req_ready    = fifo_ready && isSlave && FIFO.io.out.bits(223, 192) === (if(usingCompressed) Cat(Mux(mem_reg_raw_inst(1, 0).andR, mem_reg_inst >> 16, 0.U), mem_reg_raw_inst(15, 0)) else mem_reg_inst)
-  val check_req_data_ld     = WireInit(0.U(64.W))
+  val check_req_data_ld  = WireInit(0.U(64.W))
   val check_req_data_st  = WireInit(0.U(64.W))
   val check_req_addr     = WireInit(0.U(64.W))
   // req is ready when fifo can provide data, otherwise replay_ex is triggered 
@@ -613,14 +646,20 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   //val fifo_data = WireInit(0.U(64.W))
 
   //val dcache = new DCache(tile.staticIdForMetadataUseOnly, tile.crossing)(p)
-  
+  val check_resp_valid_test    = WireInit(false.B)
   val check_resp_valid    = WireInit(false.B)
+
+  val check_resp_replay   = WireInit(false.B)
+  val check_replay_ready   = WireInit(false.B)
+  val check_replay_valid   = WireInit(false.B)
+
   val check_s2_nack       = WireInit(false.B)
+  val check_replay_inst   = RegInit(0.U(32.W))
   val check_resp_data_ld  = RegInit(0.U(64.W))
   val check_resp_data_st  = RegInit(0.U(64.W))
   val check_resp_addr     = RegInit(0.U(64.W))
   val check_resp_waddr    = WireInit(0.U(5.W))
-  
+  val check_resp_valid_same = check_resp_valid === check_resp_valid_test
 
   val check_addr       = RegInit(true.B)
   val check_data       = RegInit(true.B)
@@ -665,6 +704,12 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   dontTouch(widx)
   dontTouch(wrf_data)
   dontTouch(wfprf_data)
+  dontTouch(check_resp_valid_test)
+  dontTouch(check_resp_valid_same)
+  dontTouch(check_replay_inst)
+  dontTouch(check_replay_ready)
+  dontTouch(check_replay_valid)
+  dontTouch(check_resp_replay)
 
   // test_fifo.io.enq.bits    := custom_reg
   // test_fifo.io.enq.valid   := ex_reg_valid
@@ -970,10 +1015,10 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   //val apply_call = ex_ctrl.rocc && ex_rocc_inst.opcode === "b0001011".U && (ex_rocc_inst.funct === 2.U)
   // replay inst in ex stage?
   val ex_pc_valid = ex_reg_valid || ex_reg_replay || ex_reg_xcpt_interrupt
-  val wb_dcache_miss = wb_ctrl.mem && !Mux(check_busy, check_resp_valid, io.dmem.resp.valid)
+  val wb_dcache_miss = wb_ctrl.mem && !Mux(check_busy, check_resp_valid || check_replay_valid, io.dmem.resp.valid)
   val wb_csr_miss    = Mux(isMaster, false.B, Mux(check_busy, (wb_ctrl.csr =/= CSR.N && wb_ctrl.wxd) && !check_resp_valid && wb_reg_valid, false.B))
   dontTouch(wb_csr_miss)
-  check_s2_nack := (!check_resp_valid && wb_ctrl.mem && wb_reg_valid) || wb_csr_miss
+  check_s2_nack := (!check_resp_valid && !check_replay_valid && wb_ctrl.mem && wb_reg_valid) || wb_csr_miss
   val replay_ex_structural = ex_ctrl.mem && !io.dmem.req.ready ||
                              ex_ctrl.div && !div.io.req.ready
   dontTouch(replay_ex_structural)
@@ -1012,6 +1057,8 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val mem_misprediction = if (usingBTB) mem_wrong_npc else mem_cfi_taken
   dontTouch(mem_misprediction)
   take_pc_mem := mem_reg_valid && !mem_reg_xcpt && (mem_misprediction || mem_reg_sfence)
+
+  
 
   val mem_rocc_inst = mem_reg_inst.asTypeOf(new RoCCInstruction())
   mem_reg_valid := !ctrl_killx
@@ -1099,19 +1146,12 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val fpu_kill_mem = mem_reg_valid && mem_ctrl.fp && io.fpu.nack_mem
   val replay_mem  = dcache_kill_mem || mem_reg_replay || fpu_kill_mem
   val killm_common = dcache_kill_mem || take_pc_wb || mem_reg_xcpt || !mem_reg_valid
-  div.io.kill := killm_common && RegNext(div.io.req.fire)
+  div.io.kill := (killm_common || wb_flush.need_take_pc) && RegNext(div.io.req.fire)
   val ctrl_killm = killm_common || mem_xcpt || fpu_kill_mem || wb_flush.need_flush
-
-  //check_resp_valid := RegEnable(mem_reg_valid && mem_ctrl.mem && check_req_ready, !(killm_common || mem_ldst_xcpt || fpu_kill_mem))
-  
-  check_resp_valid := RegNext(mem_reg_valid && (mem_ctrl.mem || (mem_ctrl.csr =/= CSR.N && mem_ctrl.wxd)) && check_req_ready)
   
   // writeback stage
   val wb_rocc_inst = wb_reg_inst.asTypeOf(new RoCCInstruction())
   
-  val wb_npc = RegNext(mem_npc)
-  val imem_req_pc = RegEnable(wb_npc, wb_flush.need_replay_pc)
-  dontTouch(imem_req_pc)
   wb_reg_valid := !ctrl_killm
   wb_reg_replay := replay_mem && !take_pc_wb
   wb_reg_xcpt := mem_xcpt && !take_pc_wb
@@ -1166,31 +1206,41 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val wb_pc_valid = wb_reg_valid || wb_reg_replay || wb_reg_xcpt
   val wb_wxd = wb_reg_valid && wb_ctrl.wxd
   val wb_set_sboard = wb_ctrl.div || wb_dcache_miss || wb_ctrl.rocc
-  val replay_wb_common = Mux(check_busy, check_s2_nack, io.dmem.s2_nack) || wb_reg_replay
+  val replay_wb_common = Mux(check_busy, check_s2_nack && !score_check_done, io.dmem.s2_nack) || wb_reg_replay
   val replay_wb_rocc = wb_reg_valid && wb_ctrl.rocc && !io.rocc.cmd.ready
 
   val let_ret_s_commit = wb_reg_valid && !wb_xcpt && !io.rocc.resp.valid && (wb_reg_pc === score_return_pc)
   val replay_wb = replay_wb_common || replay_wb_rocc || (score_return && !let_ret_s_commit)
-  take_pc_wb := replay_wb || wb_xcpt || csr.io.eret || wb_reg_flush_pipe || RegNext(wb_flush.need_take_pc)
-
+  take_pc_wb := replay_wb || wb_xcpt || csr.io.eret || wb_reg_flush_pipe || (RegNext(wb_flush.need_take_pc) && user_mode)
+  
+  //check_resp_valid := RegNext(mem_reg_valid && (mem_ctrl.mem || (mem_ctrl.csr =/= CSR.N && mem_ctrl.wxd)) && check_req_ready)
+  check_resp_valid := Mux(RegNext(!(killm_common || mem_ldst_xcpt || fpu_kill_mem || replay_wb)), RegNext(mem_reg_valid && (mem_ctrl.mem || (mem_ctrl.csr =/= CSR.N && mem_ctrl.wxd)) && check_req_ready), false.B)
+  check_resp_replay := replay_wb && wb_ctrl.mem && check_resp_valid
+  when(check_resp_replay){
+    check_replay_inst := wb_reg_inst
+  }
+  check_replay_ready  := mem_reg_valid && mem_ctrl.mem && (check_replay_inst === mem_reg_inst)
+  check_replay_valid  := Mux(RegNext(!(killm_common || mem_ldst_xcpt || fpu_kill_mem || replay_wb)), RegNext(mem_reg_valid && mem_ctrl.mem && check_replay_ready), false.B)
+  //check_resp_valid_test := RegEnable(mem_reg_valid && mem_ctrl.mem && check_req_ready, !(killm_common || mem_ldst_xcpt || fpu_kill_mem || replay_wb))
+  //check_resp_valid_test := Mux(RegNext(!(killm_common || mem_ldst_xcpt || fpu_kill_mem || replay_wb)), RegNext(mem_reg_valid && (mem_ctrl.mem || (mem_ctrl.csr =/= CSR.N && mem_ctrl.wxd)) && check_req_ready), false.B)
   // writeback arbitration
   val dmem_resp_xpu     = Mux(check_busy, check_resp_xpu  , !io.dmem.resp.bits.tag(0).asBool                 )
   val dmem_resp_fpu     = Mux(check_busy, check_resp_fpu  , io.dmem.resp.bits.tag(0).asBool                  )
   val dmem_resp_waddr   = Mux(check_busy, check_resp_waddr, io.dmem.resp.bits.tag(5, 1)                      )
-  val dmem_resp_valid   = Mux(check_busy, check_resp_valid && (wb_ctrl.mem_cmd.isOneOf(M_XRD, M_XLR, M_XSC) || isAMO(wb_ctrl.mem_cmd)), io.dmem.resp.valid && io.dmem.resp.bits.has_data )
+  val dmem_resp_valid   = Mux(check_busy, (check_resp_valid || check_replay_valid) && (wb_ctrl.mem_cmd.isOneOf(M_XRD, M_XLR, M_XSC) || isAMO(wb_ctrl.mem_cmd)), io.dmem.resp.valid && io.dmem.resp.bits.has_data )
   val dmem_resp_replay  = Mux(check_busy, false.B         , dmem_resp_valid && io.dmem.resp.bits.replay      )
 
   div.io.resp.ready := !wb_wxd
   val ll_wdata = WireDefault(div.io.resp.bits.data)
   val ll_waddr = WireDefault(div.io.resp.bits.tag)
-  val ll_wen = WireDefault(div.io.resp.fire)
+  val ll_wen = WireDefault(div.io.resp.fire && Mux(sbo(32) || fp_sbo(32), true.B, Mux(user_mode, (!mcore_check_done && !score_check_done && !(check_busy && SFIFO_almostempty)), true.B)))
   if (usingRoCC) {
     io.rocc.resp.ready := !wb_wxd
     when (io.rocc.resp.fire) {
       div.io.resp.ready := false.B
       ll_wdata := io.rocc.resp.bits.data
       ll_waddr := io.rocc.resp.bits.rd
-      ll_wen := true.B
+      ll_wen := true.B && Mux(user_mode, (!mcore_check_done && !score_check_done && !(check_busy && SFIFO_almostempty)), true.B)
     }
   }
   when (dmem_resp_replay && dmem_resp_xpu) {
@@ -1198,7 +1248,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     if (usingRoCC)
       io.rocc.resp.ready := false.B
     ll_waddr := dmem_resp_waddr
-    ll_wen := true.B
+    ll_wen := true.B && Mux(user_mode, (!mcore_check_done && !score_check_done && !(check_busy && SFIFO_almostempty)), true.B)
   }
 
   val wb_valid = wb_reg_valid && !replay_wb && !wb_xcpt
@@ -1206,24 +1256,40 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val rf_wen = Mux(receiving_rf || score_return_rf, rf_apply_en, wb_wen || ll_wen)
   val rf_waddr = Mux(receiving_rf || score_return_rf, rf_apply_addr, Mux(ll_wen, ll_waddr, wb_waddr))
   val rf_wdata = Mux(receiving_rf || score_return_rf, rf_apply_data,
-                    Mux(dmem_resp_valid && dmem_resp_xpu, Mux(check_busy, check_resp_data_ld, io.dmem.resp.bits.data(xLen-1, 0)),
+                    Mux(dmem_resp_valid && dmem_resp_xpu && !mcore_check_done, Mux(check_busy, check_resp_data_ld, Mux(sc_undone, sc_cond, io.dmem.resp.bits.data(xLen-1, 0))),
                       Mux(ll_wen, ll_wdata,
                         Mux(wb_ctrl.csr =/= CSR.N, Mux(check_busy, check_resp_data_ld, csr.io.rw.rdata),
                             Mux(wb_ctrl.mul, mul.map(_.io.resp.bits.data).getOrElse(wb_reg_wdata),
                                 wb_reg_wdata)))))
   wb_reg_flush_pipe := (!ctrl_killm && mem_reg_flush_pipe)
   custom_jalr := wb_valid && wb_ctrl.jalr && wb_reg_inst(12) === 1.U && isSlave
-  score_check_overtaking := SFIFO_empty && wb_valid && check_busy
+  score_check_overtaking := SFIFO_almostempty && wb_valid && check_busy
   when(custom_jalr){
     have_jumped := true.B
   }
 
   when(wb_valid){
     check_resp_waddr := wb_waddr
+    comit_ctrl       := wb_ctrl
   }
   dontTouch(check_resp_waddr)
   dontTouch(wb_waddr)
-
+  
+  val wb_npc = RegEnable(mem_npc, mem_reg_valid)
+  val wb_npc_test = RegEnable(wb_npc, wb_valid)
+  when(instcoun.io.check_done){
+    imem_req_pc_test := csr.io.evec
+  }.elsewhen(wb_valid){
+    imem_req_pc_test := wb_npc
+  }
+  when(csr.io.eret){
+    imem_req_pc := csr.io.evec
+  }.elsewhen(wb_valid){
+    imem_req_pc := wb_npc
+  }
+  dontTouch(imem_req_pc)
+  dontTouch(wb_npc_test)
+  dontTouch(imem_req_pc_test)
   //wb_flush signals
   wb_flush.m_flush.check_done    := instcoun.io.check_done && isMaster
   wb_flush.m_flush.complete      := instcoun.io.mcore_check_complete && isMaster
@@ -1246,7 +1312,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
                                     */           
 
   dontTouch(rf_wdata)
-  Mchecke_call   := RegNext(wb_ctrl.rocc && wb_valid && wb_rocc_inst.opcode === "b0001011".U && (wb_rocc_inst.funct === 11.U) && isMaster)
+  Mchecke_call   := wb_ctrl.rocc && wb_valid && wb_rocc_inst.opcode === "b0001011".U && (wb_rocc_inst.funct === 11.U) && isMaster
   Mcheck_end     := wb_ctrl.rocc && wb_valid && wb_rocc_inst.opcode === "b0001011".U && (wb_rocc_inst.funct === 11.U) && isMaster
   Mcheck_call    := wb_ctrl.rocc && wb_valid && wb_rocc_inst.opcode === "b0001011".U && (wb_rocc_inst.funct === 3.U)
   //Mcheck_end     := !mem_misprediction && mem_ctrl.rocc && mem_reg_valid && mem_rocc_inst.opcode === "b0001011".U && (mem_rocc_inst.funct === 11.U) && isMaster
@@ -1260,25 +1326,31 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   }
   //tw's customs
   q_copyvalid := copyvalid
+  q_copyvalid_test := copyvalid_test
   dontTouch(copyvalid)
   dontTouch(q_copyvalid)
   
   //instruction  counter IO hook up
   instcoun.io.wb_valid := wb_valid
-  instcoun.io.start := (mcore_checking && isMaster) || (check_busy && have_jumped && isSlave)
+  instcoun.io.start := (mcore_checking && isMaster && user_mode) || (check_busy && have_jumped && isSlave && user_mode)
 
   //copy signals connect
-  copy_signals.Mcheck_call         := Mcheck_call && isMaster
-  copy_signals.Mchecke_call        := Mchecke_call && isMaster
+  copy_signals.Mcheck_call         := Mcheck_call && isMaster && slave_is_umode
+  copy_signals.Mchecke_call        := Mchecke_call && isMaster && mcore_checking
   copy_signals.common_endCP        := instcoun.io.copy_valid && isMaster
-  copy_signals.common_startCP      := mcore_check_free && start_check && !mcore_checking && !rf_sentvalid
-  copy_signals.task_change_startCP := task_monitor.master_can_startcheck && !mcore_checking && start_check
-  copy_signals.task_change_endCP   := task_monitor.master_need_endcheck && mcore_checking
+  copy_signals.common_startCP      := mcore_check_free && start_check && !mcore_checking && !rf_sentvalid_test && slave_is_umode && !csr.io.interrupt
+  copy_signals.task_change_startCP := task_monitor.master_can_startcheck && !mcore_checking && start_check && !rf_sentvalid_test && slave_is_umode 
+  copy_signals.task_change_endCP   := task_monitor.master_need_endcheck && mcore_checking && !rf_sentvalid_test
   copy_signals.Srecode_call        := Srecode_call && isSlave
 
   when(copy_signals.copy){
-    copyvalid := true.B
+    //copyvalid := true.B
+    copyvalid_test := true.B
   } 
+
+  when(copy_signals.common_startCP){
+    copyvalid_test := true.B
+  }
 
   //when(Mchecke_call){
   //  end_check := true.B
@@ -1289,51 +1361,92 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     mcore_check_done := true.B && isMaster
   }
 
-  when(wb_valid){
-    intpc_reg := wb_npc
-  }    
+  when(instcoun.io.check_done_common){
+    mcore_check_done_common := true.B && isMaster
+  }
+  intpc_reg := Mux(csr.io.eret, csr.io.evec, Mux(wb_valid, wb_npc, intpc_reg)) 
   
 
   //copy and sent module IO hook up  
-  for( i <- 1 until 32){
-    isa.io.intreg_input(i.U) := rf.read(i.U)
+  val copyidx = isa.io.copyidx
+  val copyidx_next = Mux(copyidx === 7.U, 0.U, copyidx + 1.U)
+  val copyaddr     = Mux(en_copyvalid_test, copyidx_next, copyidx)
+  dontTouch(copyidx)
+  dontTouch(copyidx_next)
+  dontTouch(copyaddr)
+  // for( i <- 1 until 32){
+  //   isa.io.intreg_input(i.U) := rf.read(i.U)
+  // }
+  // isa.io.intreg_input(0) := 0.U
+  // for( i <-0 until 32){
+  //   isa.io.fpreg_input(i) := io.fpu.frf(i)
+  // }
+
+  for( i <- 0 until 4){
+    isa.io.intreg_input_test(i.U) := rf.read(copyidx * 4.U + i.U)
   }
-  isa.io.intreg_input(0) := 0.U
-  for( i <-0 until 32){
-    isa.io.fpreg_input(i) := io.fpu.frf(i)
+  
+  for( i <-0 until 4){
+    isa.io.fpreg_input_test(i) := io.fpu.frf_test(i)
   }
+  
   
   isa.io.intpc_input := intpc_reg
   isa.io.fpcsr_input := csr.io.fcsr_read
-  score_return_pc    := RegEnable(intpc_reg, en_copyvalid && isSlave) 
+  score_return_pc    := RegEnable(intpc_reg, en_copyvalid_test && isSlave) 
   
-  instcoun.io.copy_done         := isa.io.copy_done
+  
   instcoun.io.inst_left         := score_check_left
   instcoun.io.CP_end            := CP_end && isSlave
   instcoun.io.Mchecke_call      := Mcheck_end
+  instcoun.io.Schecke_call      := Scheck_end && isSlave
   instcoun.io.instnum_threshold := check_instnum_threshold
-  instcoun.io.exception         := csr.io.trace(0).exception && mcore_checking
+  instcoun.io.user_mode         := user_mode
   instcoun.io.CP_mid            := CP_mid_ofchange && isSlave
+  instcoun.io.mcore_endcheck    := task_monitor.slave_priv_change_tonotuser && mcore_checking && !rf_sentvalid_test && user_mode
+  instcoun.io.mode_signe        := mode_signe
+  instcoun.io.inst_left_wire    := inst_left
+  instcoun.io.isMaster          := isMaster
 
-  when(!csr.io.interrupt && ctrl_killd && q_copyvalid && fsign){
+  // when(ctrl_killd && q_copyvalid && fsign){
+  //   pc_reg := ibuf.io.pc
+  //   fsign := false.B
+  // }
+
+  when(ctrl_killd && q_copyvalid_test && fsign_test){
     pc_reg := ibuf.io.pc
-    fsign := false.B
+    fsign_test := false.B
   }
   
-  when(isa.io.copy_done){
-    copyvalid := false.B
-    rf_sentvalid := true.B
-    fsign := true.B
+  // when(isa.io.copy_done){
+  //   rf_sentvalid := true.B
+  //   fsign := true.B
+  // }
+
+  when(isa.io.cansent){
+    rf_sentvalid_test := true.B
   }
 
+  when(isa.io.copy_done_test){
+    fsign_test := true.B
+  }
+
+  // when(isa.io.copy_done || (q_copyvalid && !mcore_checking && !user_mode)){
+  //   copyvalid := false.B
+  // }
+  when(isa.io.copy_done_test || (q_copyvalid_test && !mcore_checking && !user_mode)){
+    copyvalid_test := false.B
+  }
   when(score_return){
     score_return_rf := true.B
   }
-  isa.io.sent_valid := ((rf_sentvalid && isMaster && !FIFO.io.full) || (score_return_rf && isSlave))
+  isa.io.sent_valid := ((rf_sentvalid_test && isMaster && !FIFO.io.full) || (score_return_rf && isSlave))
   when(isa.io.sent_done){
-    rf_sentvalid     := false.B
-    score_return_rf  := false.B
-    mcore_check_done := false.B
+    rf_sentvalid            := false.B
+    rf_sentvalid_test       := false.B
+    score_return_rf         := false.B
+    mcore_check_done        := false.B
+    mcore_check_done_common := false.B
   }
 
 
@@ -1349,7 +1462,10 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   dontTouch(out_idx)
   dontTouch(out_wrf_data)
   when(out_sign && isSlave){
-    when(out_datatype === 1.U){
+    when(out_datatype === 0.U){
+      fcsr_out      := out_data(7, 0)
+      csr_apply_en  := score_return_rf
+    }.elsewhen(out_datatype === 1.U){
       rf_apply_en   := true.B
       rf_apply_addr := out_idx
       rf_apply_data := out_wrf_data
@@ -1398,15 +1514,20 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     val htval_imem = Mux(htval_valid_imem, io.imem.gpa.bits, 0.U)
     assert(!htval_valid_imem || io.imem.gpa.valid)
 
-    val htval_valid_dmem = wb_xcpt && tval_dmem_addr && io.dmem.s2_xcpt.gf.asUInt.orR && !io.dmem.s2_xcpt.pf.asUInt.orR
-    val htval_dmem = Mux(htval_valid_dmem, io.dmem.s2_gpa, 0.U)
+    val htval_valid_dmem = wb_xcpt && tval_dmem_addr && Mux(check_busy, false.B, io.dmem.s2_xcpt.gf.asUInt.orR) && !Mux(check_busy, false.B, io.dmem.s2_xcpt.pf.asUInt.orR)
+    val htval_dmem = Mux(htval_valid_dmem, Mux(check_busy, 0.U, io.dmem.s2_gpa), 0.U)
 
     (htval_dmem | htval_imem) >> hypervisorExtraAddrBits
   }
-  task_monitor.trace_ppn        := csr.io.ptbr.ppn
-  task_monitor.trace_priv       := csr.io.status.prv
-  task_monitor.trace_ppn_next   := RegNext(csr.io.ptbr.ppn)
-  task_monitor.trace_priv_next  := RegNext(csr.io.status.prv)
+  task_monitor.trace_ppn                   := csr.io.ptbr.ppn
+  task_monitor.trace_priv                  := csr.io.status.prv
+  task_monitor.trace_slave_priv_umode      := slave_is_umode
+  task_monitor.trace_slave_priv_umode_next := RegNext(slave_is_umode)
+  task_monitor.trace_exception             := RegNext(csr.io.trace(0).exception)
+  task_monitor.xcpt_cause                  := RegNext(csr.io.trace(0).cause & (~((BigInt(1) << 63).U)))
+  task_monitor.trace_ppn_next              := RegNext(csr.io.ptbr.ppn)
+  task_monitor.trace_priv_next             := RegNext(csr.io.status.prv)
+  dontTouch(task_monitor)
 
   io.ptw.ptbr := csr.io.ptbr
   io.ptw.hgatp := csr.io.hgatp
@@ -1479,6 +1600,8 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   val data_hazard_wb = wb_ctrl.wxd && checkHazards(hazard_targets, _ === wb_waddr)
   val fp_data_hazard_wb = id_ctrl.fp && wb_ctrl.wfd && checkHazards(fp_hazard_targets, _ === wb_waddr)
   val id_wb_hazard = wb_reg_valid && (data_hazard_wb && wb_set_sboard || fp_data_hazard_wb)
+  dontTouch(id_ex_hazard)
+  dontTouch(id_mem_hazard)
 
   val id_stall_fpu = if (usingFPU) {
     val fp_sboard = new Scoreboard(32)
@@ -1511,9 +1634,9 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     csr.io.singleStep && (ex_reg_valid || mem_reg_valid || wb_reg_valid) ||
     id_csr_en && csr.io.decode(0).fp_csr && !io.fpu.fcsr_rdy ||
     id_ctrl.fp && id_stall_fpu ||
-    //id_ctrl.mem && dcache_blocked || // reduce activity during D$ misses
-    Mux(isMaster, id_ctrl.mem && dcache_blocked, Mux(check_busy, mem_ctrl.mem && !check_req_ready && mem_reg_valid, id_ctrl.mem && dcache_blocked)) ||
-    Mux(isMaster, false.B, Mux(check_busy, (mem_ctrl.csr =/= CSR.N && mem_ctrl.wxd) && !check_req_ready && mem_reg_valid, false.B)) || 
+    id_ctrl.mem && dcache_blocked || // reduce activity during D$ misses
+    Mux(isMaster, id_ctrl.mem && dcache_blocked, Mux(check_busy, mem_ctrl.mem && !check_req_ready && !check_replay_ready && mem_reg_valid, id_ctrl.mem && dcache_blocked)) ||
+    //Mux(isMaster, false.B, Mux(check_busy, (mem_ctrl.csr =/= CSR.N && mem_ctrl.wxd) && !check_req_ready && mem_reg_valid, false.B)) || 
     //(ex_ctrl.mem && check_busy && !check_req_ready && isSlave && ex_reg_valid) ||
     id_ctrl.rocc && rocc_blocked || // reduce activity while RoCC is busy
     id_ctrl.div && (!(div.io.req.ready || (div.io.resp.valid && !wb_wxd)) || div.io.req.valid) || // reduce odds of replay
@@ -1522,16 +1645,17 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
     csr.io.csr_stall ||
     id_reg_pause ||
     io.traceStall ||
-    q_copyvalid ||
-    receiving_rf ||
-    (rf_sentvalid && isMaster) ||
+    q_copyvalid_test ||
+    receiving_rf || rece_rf_done ||
+    (rf_sentvalid_test && isMaster && Mux(user_mode, true.B, !FIFO.io.full)) ||
     (score_return_rf && isSlave) ||
     //(apply_call && !rece_rf_done) ||
-    MFIFO_almostfull ||
-    (SFIFO_empty && check_busy) ||
-    (score_check_done && isSlave)
-
-  dontTouch(ctrl_stalld)
+    (MFIFO_almostfull && mcore_checking) ||
+    (SFIFO_almostempty && (check_busy || receiving_rf || rece_rf_done)) ||
+    (score_check_done && isSlave) ||
+    past_sign
+    //(!mcore_checking && user_mode && start_check && isMaster)
+   dontTouch(ctrl_stalld)
   ctrl_killd := !ibuf.io.inst(0).valid || ibuf.io.inst(0).bits.replay || take_pc_mem_wb || ctrl_stalld || csr.io.interrupt || wb_flush.need_flush
   
   io.imem.req.valid := take_pc
@@ -1580,14 +1704,16 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
 
   io.fpu.valid := !ctrl_killd && id_ctrl.fp
   io.fpu.killx := ctrl_killx
-  io.fpu.killm := killm_common
+  io.fpu.killm := killm_common || wb_flush.need_flush
   io.fpu.inst := id_inst(0)
   io.fpu.fromint_data := ex_rs(0)
-  io.fpu.dmem_resp_val := dmem_resp_valid && dmem_resp_fpu
+  io.fpu.dmem_resp_val := Mux(isMaster, dmem_resp_valid && dmem_resp_fpu && !RegNext(wb_flush.m_flush.check_done || wb_flush.m_flush.complete), dmem_resp_valid && dmem_resp_fpu)
   io.fpu.dmem_resp_data := Mux(check_busy, check_resp_data_ld, (if (minFLen == 32) io.dmem.resp.bits.data_word_bypass else io.dmem.resp.bits.data))
   io.fpu.dmem_resp_type := Mux(check_busy, check_resp_size, io.dmem.resp.bits.size)
   io.fpu.dmem_resp_tag := dmem_resp_waddr
   io.fpu.keep_clock_enabled := io.ptw.customCSRs.disableCoreClockGate
+  io.fpu.copyidx  := copyidx
+  io.fpu.compidx  := widx
   io.fpu.apply_en := fp_apply_en
   io.fpu.apply_bits := fprf_data
   io.fpu.apply_idx := fprf_idx
@@ -1605,7 +1731,7 @@ class Rocket(tile: RocketTile)(implicit p: Parameters) extends CoreModule()(p)
   io.dmem.req.bits.dprv             := Mux(check_busy, 0.U, Mux(ex_reg_hls, csr.io.hstatus.spvp, csr.io.status.dprv))
   io.dmem.req.bits.dv               := Mux(check_busy, false.B, ex_reg_hls || csr.io.status.dv)
   io.dmem.s1_data.data              := Mux(check_busy, 0.U, (if (fLen == 0) mem_reg_rs2 else Mux(mem_ctrl.fp, Fill((xLen max fLen) / fLen, io.fpu.store_data), mem_reg_rs2)))
-  io.dmem.s1_kill                   := Mux(check_busy, false.B, killm_common || mem_ldst_xcpt || fpu_kill_mem)
+  io.dmem.s1_kill                   := Mux(check_busy, false.B, killm_common || mem_ldst_xcpt || fpu_kill_mem || wb_flush.need_flush)
   io.dmem.s2_kill                   := false.B
   // don't let D$ go to sleep if we're probably going to use it soon
   io.dmem.keep_clock_enabled        := ibuf.io.inst(0).valid && id_ctrl.mem && !csr.io.csr_stall
@@ -1769,27 +1895,37 @@ when(isMaster){
     FIFO.io.in.valid := true.B
     start_check      := true.B
   }.elsewhen(Mchecke_call){
-    FIFO.io.in.bits  := Cat(instcoun.io.instnum, "h_eeee".U)
+    FIFO.io.in.bits  := Cat(mcore_checking.asUInt, 0.U(175.W), instcoun.io.instnum, "h_eeee".U)
     FIFO.io.in.valid := true.B
-    mcore_checking   := false.B
+    //mcore_checking   := false.B
     start_check      := false.B
     end_check        := true.B
-  }.elsewhen(task_monitor.master_need_endcheck && mcore_checking){
-    FIFO.io.in.bits  := Cat(Mux(wb_valid, instcoun.io.instnum + 1.U, instcoun.io.instnum), "h_bbbb".U)
+  }.elsewhen((!my_log_unit.io.fifo_valid && task_monitor.master_need_endcheck) && mcore_checking && !rf_sentvalid_test && !mcore_check_done_common){
+    FIFO.io.in.bits  := Cat(Mux(task_monitor.user_ecall, instcoun.io.instnum - 1.U, Mux(wb_valid, instcoun.io.instnum + 1.U, instcoun.io.instnum)), "h_bbbb".U)
     FIFO.io.in.valid := true.B
-    mcore_checking   := false.B
+    //mcore_checking   := false.B
     // start_check      := false.B
     // end_check        := true.B
+  }.elsewhen((RegNext(my_log_unit.io.fifo_valid) && RegNext(task_monitor.master_need_endcheck)) && mcore_checking && !rf_sentvalid_test && !mcore_check_done_common){
+    FIFO.io.in.bits  := Cat(Mux(task_monitor.user_ecall, instcoun.io.instnum - 1.U, Mux(wb_valid, instcoun.io.instnum + 1.U, instcoun.io.instnum)), "h_bbbb".U)
+    FIFO.io.in.valid := true.B
   }.elsewhen(start_check){
-    when(rf_sentvalid){
-      when(mcore_check_free){
-        mcore_checking := true.B
-      }.otherwise{
-        mcore_checking := false.B
-      }
+    when(isa.io.sent_done && user_mode && !mcore_checking && !mcore_check_done){
+      mcore_checking      := true.B
+    }.elsewhen(isa.io.sent_done && mcore_checking){
+      mcore_checking      := false.B
+    }.elsewhen(isa.io.sent_done && !user_mode && !mcore_checking){
+      sentdone_butuncheck := true.B
+    }.elsewhen(!mcore_checking && sentdone_butuncheck && user_mode){
+      mcore_checking      := true.B
+      sentdone_butuncheck := false.B
+    }.elsewhen(mcore_checking){
+      sentdone_butuncheck := false.B
+    }
+    when(rf_sentvalid_test){
       FIFO.io.in.bits  := isa.io.sent_output
-      FIFO.io.in.valid := rf_sentvalid
-    }.elsewhen(ls_sentvalid && mcore_checking){
+      FIFO.io.in.valid := rf_sentvalid_test
+    }.elsewhen(ls_sentvalid && mcore_checking && user_mode){
       FIFO.io.in.bits  := ls_data
       FIFO.io.in.valid := ls_sentvalid
     }.otherwise{
@@ -1797,9 +1933,21 @@ when(isMaster){
       FIFO.io.in.valid := false.B
     }
   }.elsewhen(end_check){
-    when(rf_sentvalid){
+    when(isa.io.sent_done && user_mode && !mcore_checking && !mcore_check_done){
+      mcore_checking      := true.B
+    }.elsewhen(isa.io.sent_done && mcore_checking){
+      mcore_checking := false.B
+    }.elsewhen(isa.io.sent_done && !user_mode && !mcore_checking){
+      sentdone_butuncheck := true.B
+    }.elsewhen(!mcore_checking && sentdone_butuncheck && user_mode){
+      mcore_checking      := true.B
+      sentdone_butuncheck := false.B
+    }.elsewhen(mcore_checking){
+      sentdone_butuncheck := false.B
+    }
+    when(rf_sentvalid_test){
       FIFO.io.in.bits  := isa.io.sent_output
-      FIFO.io.in.valid := rf_sentvalid
+      FIFO.io.in.valid := rf_sentvalid_test
     }.otherwise{
       FIFO.io.in.bits  := 0.U
       FIFO.io.in.valid := false.B
@@ -1832,14 +1980,31 @@ when(isMaster){
   custom_reg          := custom_reg + io.hartid + 1.U
   mtomux.io.out.ready := false.B
   mtomux.io.busy_in   := true.B
+  mtomux.io.umode_in  := true.B
   for(i <- 0 until GlobalParams.Num_Groupcores){
     mtomux.io.in(i).bits := 0.U
     mtomux.io.in(i).valid := false.B
     mtomux.io.sels(i) := false.B
   }
-  mcore_free := otmmux.io.free_out
-  otmmux.io.busy_in := io.score_busy_in
+  mcore_free         := otmmux.io.free_out
+  otmmux.io.busy_in  := io.score_busy_in
+  otmmux.io.umode_in := io.score_umode_in
+  slave_is_umode     := otmmux.io.umode_out.reduce(_ && _)
+
   instcoun.io.next_check    := isa.io.sent_done
+
+  when(mem_reg_valid && mem_ctrl.mem && mem_ctrl.mem_cmd === "b00111".U && ctrl_killm){
+    sc_undone := true.B
+  }.elsewhen(wb_valid && wb_ctrl.mem && wb_ctrl.mem_cmd === "b00111".U){
+    sc_undone := false.B
+  }
+  when(sc_undone && io.dmem.resp.valid){
+    sc_cond := io.dmem.resp.bits.data
+  }.elsewhen(!sc_undone){
+    sc_cond := 1.U
+  }
+  
+  
 }.otherwise{
   //io.custom_FIFOin <> mtomux.io.in
   //mtomux.io.out <> FIFO.io.in
@@ -1852,12 +2017,16 @@ when(isMaster){
     mtomux.io.in(i).valid     := io.custom_FIFOin(i).valid
   }
   mtomux.io.sels := reg_slavesels(io.hartid % GlobalParams.Num_Groupcores.U).asBools
+
+  
   
   rdata       := Mux(FIFO.io.empty, 0.U, FIFO.io.out.bits)
   //mode toggle
   mode_signe  := rdata(15, 0) === "h_eeee".U
-  mode_signs  := rdata === "h_aaaa".U
+  mode_signs  := rdata        === "h_aaaa".U
   mode_signc  := rdata(15, 0) === "h_bbbb".U
+
+  val checking = Mux(mode_signe, rdata(255) === 1.U, false.B)
 
   past_sign   := rdata(255,251) === "b10110".U 
   //pc_sign     := rdata(255, 253) === "b111".U
@@ -1882,10 +2051,13 @@ when(isMaster){
   }.elsewhen(rece_rf_done){
     CP_start   := false.B
   }
-  when(mode_signe){
+  when(mode_signe && checking && (!ls_sign && !rf_sign)){
     score_check_left := rdata(79, 16)
     CP_end           := true.B
-  }.elsewhen(mode_signc){
+  }.elsewhen(mode_signe && !checking && (!ls_sign && !rf_sign)){
+    Scheck_end       := true.B
+  }.elsewhen(mode_signc && user_mode && (!ls_sign && !rf_sign)){
+    inst_left        := rdata(79, 16)
     score_check_left := rdata(79, 16)
     CP_mid_ofchange  := true.B
   }
@@ -1896,18 +2068,24 @@ when(isMaster){
     end_check                 := true.B
   }
   //score_check_done := ((instcoun.io.instnum >= score_check_left) && CP_end) || instcoun.io.check_done
-  FIFO.io.out.ready := mode_signe || mode_signs || past_sign || mode_signc ||
-                       (slave_rece_en && rf_sign && !check_busy) || 
+  FIFO.io.out.ready := (mode_signe && (!ls_sign && !rf_sign)) || (mode_signs && (!ls_sign && !rf_sign)) || past_sign || (mode_signc && user_mode && (!ls_sign && !rf_sign)) ||
+                       (slave_rece_en && rf_sign && !check_busy && user_mode && (instcoun.io.instnum === 0.U) && !(CP_mid_ofchange || CP_end)) || 
                        (slave_rece_en && rf_sign && check_busy && score_check_done && !wb_valid && !sbo(32) && !fp_sbo(32) && !io.fpu.fpu_inflight && div.io.req.ready && statesignal && !csr.io.interrupt) || //(slave_rece_en && rf_sign && CP_end && !wb_valid) ||     //receive rf data
-                       (check_busy && check_req_ready && (!replay_wb) && mem_reg_valid && (mem_ctrl.mem || (mem_ctrl.csr =/= CSR.N && mem_ctrl.wxd)))  //check_resp_valid //receive rf_data or ls_data when need
+                       (check_busy && check_req_ready && (!(replay_wb || killm_common || mem_ldst_xcpt || fpu_kill_mem || score_check_overtaking)) && mem_reg_valid && (mem_ctrl.mem || (mem_ctrl.csr =/= CSR.N && mem_ctrl.wxd)))  //check_resp_valid //receive rf_data or ls_data when need
   
   rf_ready := rf_sign && !FIFO.io.out.ready
-  receiving_rf := (rf_count > 0.U) && (rf_count < 32.U)
+  receiving_rf := (rf_count >= 1.U) && (rf_count < 32.U) || (rf_sign && rf_datatype === 1.U && widx === 0.U && FIFO.io.out.ready)
   //rf_read_addr := Counter(FIFO.io.out.ready && rf_sign && rf_datatype === 1.U || rf_datatype === 0.U, 32)._1
   //rf_read_addr := Counter((0 until 32), FIFO.io.out.ready && rf_sign && (rf_datatype === 1.U || rf_datatype === 0.U), rece_rf_done)._1
-  rf_read_addr   := Mux(rf_sign && rf_datatype === 1.U, widx + 1.U, 1.U)
+  rf_read_addr   := Mux(receiving_rf, rf_count + 1.U, 1.U)
   //score_comp_done := rece_rf_done && check_busy
-  when(rece_rf_done && !check_busy){
+  when(task_monitor.priv_change_tonotuser){
+    check_busy                := false.B
+    instcoun.io.next_check    := false.B
+  }.elsewhen(task_monitor.priv_change_touser && start_check && (instcoun.io.instnum > 0.U || have_jumped)){
+    check_busy                := true.B
+    instcoun.io.next_check    := false.B
+  }.elsewhen(rece_rf_done && !check_busy && user_mode){
     check_busy                := true.B
     instcoun.io.next_check    := true.B
   }.elsewhen(rece_rf_done && check_busy){
@@ -1919,7 +2097,7 @@ when(isMaster){
     instcoun.io.next_check    := false.B
   }
   //fp_apply_en := rf_sign && rf_datatype === 2.U && receiving_rf
-  csr_apply_en := rf_sign && rf_datatype === 0.U && receiving_rf
+  //csr_apply_en := rf_sign && rf_datatype === 0.U && receiving_rf
   rece_rf_done := RegNext(rf_wrap)//RegNext(receiving_rf) && !receiving_rf && !rf_ready
   when(rece_rf_done && CP_end){
     CP_end := false.B
@@ -1928,28 +2106,33 @@ when(isMaster){
     CP_mid_ofchange := false.B
   }
   //receive rf s
-  when(!check_busy){
+  when(!check_busy && user_mode){
     when(rf_sign){
       when(rf_datatype === 0.U){
         jump_pc := rdata(47, 8)
         fcsr_out := rdata(7, 0)
-      }.elsewhen(rf_datatype === 1.U){
-          rf_apply_data := wrf_data
-          rf_apply_en   := true.B
-          rf_apply_addr := widx
+        csr_apply_en := FIFO.io.out.ready
+      }.elsewhen(rf_datatype === 1.U && widx === 0.U){
           fprf_data    := wfprf_data
           fprf_idx     := widx
           fp_apply_en  := true.B
         //rf.write(widx, wrf_data)
+      }.elsewhen(rf_datatype === 1.U && widx > 0.U){
+          rf_apply_data := wrf_data
+          rf_apply_en   := true.B
+          rf_apply_addr := widx
+          fprf_data     := wfprf_data
+          fprf_idx      := widx
+          fp_apply_en   := true.B
       }
     }
   }.elsewhen(check_busy){
     when(rf_sign){
       when(rf_datatype === 1.U){
-        when((wrf_data =/= rf_read_data) && (widx =/= 0.U)){
+        when((wrf_data =/= rf_read_data) && (widx =/= 0.U) && (rf_read_addr =/= 0.U)){
           check_rfcp := false.B
         }
-        when(wfprf_data =/= io.fpu.frf(widx)){
+        when(wfprf_data =/= io.fpu.frf_comp){
           check_fprfcp := false.B
         }
       }
@@ -1962,14 +2145,18 @@ when(isMaster){
     check_req_data_st    := st_value
     check_req_addr       := ls_addr
   }
-  mtomux.io.busy_in := check_busy
-  io.score_busy_out := mtomux.io.busy_out // score send busy singal
+
+  mtomux.io.umode_in := task_monitor.trace_priv === PRV.M.U
+  mtomux.io.busy_in  := check_busy || (instcoun.io.instnum > 0.U)
+  io.score_umode_out := mtomux.io.umode_out
+  io.score_busy_out  := mtomux.io.busy_out // score send busy singal
   otmmux.io.in.valid := false.B
   otmmux.io.in.bits := 0.U
   for(i <- 0 until GlobalParams.Num_Groupcores){
     otmmux.io.out(i).ready := false.B
-    otmmux.io.sels(i) := false.B
-    otmmux.io.busy_in(i) := false.B
+    otmmux.io.sels(i)      := false.B
+    otmmux.io.busy_in(i)   := false.B
+    otmmux.io.umode_in(i)  := false.B
   }
 }
 // .otherwise{
@@ -2213,6 +2400,13 @@ when(isMaster){
   val icache_blocked = !(io.imem.resp.valid || RegNext(io.imem.resp.valid))
   csr.io.counters foreach { c => c.inc := RegNext(perfEvents.evaluate(c.eventSel)) }
 
+  val branch_misp = take_pc_mem && mem_direction_misprediction
+  val control_misp = take_pc_mem && mem_misprediction && mem_cfi && !mem_direction_misprediction && !icache_blocked
+  val I_miss       = io.imem.perf.acquire
+  dontTouch(branch_misp)
+  dontTouch(control_misp)
+  dontTouch(I_miss)
+
   val coreMonitorBundle = Wire(new CoreMonitorBundle(xLen, fLen))
   dontTouch(coreMonitorBundle)
 
@@ -2284,14 +2478,22 @@ when(isMaster){
   
   statesignal := !ex_reg_valid && !mem_reg_valid && !wb_reg_valid
   //this is for the copyvalid input enable signal 
-  en_copyvalid := !sbo(32) && !fp_sbo(32) && !io.fpu.fpu_inflight && div.io.req.ready && statesignal && !isa.io.copy_done && !csr.io.interrupt && ctrl_stalld && q_copyvalid && !fsign
-  dontTouch(en_copyvalid)
+  //en_copyvalid := !sbo(32) && !fp_sbo(32) && !io.fpu.fpu_inflight && div.io.req.ready && statesignal && !isa.io.copy_done && ctrl_stalld && q_copyvalid && !fsign
+  en_copyvalid_test := !sbo(32) && !fp_sbo(32) && !io.fpu.fpu_inflight && div.io.req.ready && statesignal && !isa.io.copy_done_test && ctrl_stalld && q_copyvalid_test && !fsign_test
+  //dontTouch(en_copyvalid)
   
-  when(en_copyvalid){
-    isa.io.copy_valid := q_copyvalid
+  // when(en_copyvalid){
+  //   isa.io.copy_valid := Mux(user_mode, q_copyvalid, q_copyvalid && mcore_checking)
+  // }
+  // .otherwise{
+  //   isa.io.copy_valid := false.B
+  // }
+
+  when(en_copyvalid_test){
+    isa.io.copy_valid_test := Mux(user_mode, q_copyvalid_test, q_copyvalid_test && mcore_checking)
   }
   .otherwise{
-    isa.io.copy_valid := false.B
+    isa.io.copy_valid_test := false.B
   }
 
   // CoreMonitorBundle for late latency writes
@@ -2344,7 +2546,7 @@ when(isMaster){
   val log_dmem_s1_data = (if (fLen == 0) mem_reg_rs2 else Mux(mem_ctrl.fp, Fill((xLen max fLen) / fLen, io.fpu.store_data), mem_reg_rs2))
   val log_dmem_s2_data = RegNext(log_dmem_s1_data)
 
-  val my_log_unit = Module(new LogUnit()(p))
+  
 
   my_log_unit.io.wb_valid               := wb_valid
   my_log_unit.io.wb_ctrl                := wb_ctrl
@@ -2506,7 +2708,7 @@ class slave_flush extends Bundle{
 class wb_flush_pipe extends Bundle{
   val m_flush = new master_flush()
   val s_flush = new slave_flush()
-  def need_flush: Bool = m_flush.check_done || m_flush.complete || s_flush.complete || s_flush.custom_jalr || s_flush.overtakeing ||s_flush.check_done
+  def need_flush: Bool = m_flush.check_done || m_flush.complete || s_flush.complete || s_flush.custom_jalr || s_flush.overtakeing || s_flush.check_done
   def need_replay_pc: Bool = m_flush.check_done || m_flush.complete || s_flush.overtakeing
   def need_jump: Bool = s_flush.custom_jalr
   def need_take_pc: Bool = need_jump || need_replay_pc
@@ -2528,15 +2730,27 @@ class need_copy extends Bundle{
 }
 
 class task_monitor(implicit p: Parameters) extends CoreBundle()(p){
+  val trace_exception             = Bool()
+  val xcpt_cause                  = UInt(xLen.W)
   val trace_priv                  = UInt(PRV.SZ.W)
+  val trace_slave_priv_umode      = Bool()
   val trace_ppn                   = UInt((maxPAddrBits - pgIdxBits).W)
   val trace_priv_next             = UInt(PRV.SZ.W)
+  val trace_slave_priv_umode_next = Bool()
   val trace_ppn_next              = UInt((maxPAddrBits - pgIdxBits).W)
-  def priv_change: Bool           = trace_priv =/= trace_priv_next
-  def ppn_change : Bool           = trace_ppn  =/= trace_ppn_next
-  def task_notchange: Bool        = !priv_change && !ppn_change
-  def priv_change_tonotuser: Bool = priv_change && (trace_priv_next === PRV.U.U)
-  def priv_change_touser: Bool    = priv_change && (trace_priv === PRV.U.U)
-  def master_need_endcheck: Bool  = !task_notchange && priv_change_tonotuser
-  def master_can_startcheck: Bool = !task_notchange && priv_change_touser
+
+  def priv_change: Bool                 = trace_priv =/= trace_priv_next
+  def slave_priv_change: Bool           = trace_slave_priv_umode =/= trace_slave_priv_umode_next
+  def ppn_change : Bool                 = trace_ppn  =/= trace_ppn_next
+  def priv_change_tonotuser: Bool       = priv_change && (trace_priv_next === PRV.U.U)
+  def slave_priv_change_tonotuser: Bool = slave_priv_change && (trace_slave_priv_umode_next === true.B)
+  def priv_change_touser: Bool          = priv_change && (trace_priv === PRV.U.U)
+  def slave_priv_change_touser: Bool    = priv_change && (trace_slave_priv_umode === true.B)
+
+  def check_notchange: Bool             = !priv_change && !ppn_change
+  def task_change:Bool            = ppn_change && (trace_priv === PRV.U.U)
+
+  def user_ecall                  = trace_exception && (xcpt_cause === Causes.user_ecall.U)
+  def master_need_endcheck: Bool  = (!check_notchange && priv_change_tonotuser) || (slave_priv_change_tonotuser)
+  def master_can_startcheck: Bool = !check_notchange && priv_change_touser
 }
