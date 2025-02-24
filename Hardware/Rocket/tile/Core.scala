@@ -176,21 +176,24 @@ trait HasCoreIO extends HasTileParameters {
     val wfi = Bool().asOutput
     val traceStall = Bool().asInput
 
+    val score_umode_in = Vec(GlobalParams.Num_Groupcores, Input(Bool()))
+    val score_umode_out = Vec(GlobalParams.Num_Groupcores, Output(Bool()))
+
     val score_busy_in =  Vec(GlobalParams.Num_Groupcores, Input(Bool()))
     val score_busy_out = Vec(GlobalParams.Num_Groupcores, Output(Bool()))
     
     val custom_FIFOin = Flipped(Vec(GlobalParams.Num_Groupcores, Decoupled(GlobalParams.Data_type)))
     val custom_FIFOout = Vec(GlobalParams.Num_Groupcores, Decoupled(GlobalParams.Data_type))
 
-    val numMasterout = UInt(4.W).asOutput
-    val numMasterin = UInt(4.W).asInput
-    val numSlaveout = UInt(4.W).asOutput
-    val numSlavein = UInt(4.W).asInput
-    val MasterIDout = UInt(16.W).asOutput
-    val MasterIDin = UInt(16.W).asInput
-    val SlaveIDout =  UInt(16.W).asOutput
-    val SlaveIDin = UInt(16.W).asInput
-    val selectionout = UInt(16.W).asOutput
-    val selectionin = UInt(16.W).asInput
+    // val numMasterout = UInt(4.W).asOutput
+    // val numMasterin = UInt(4.W).asInput
+    // val numSlaveout = UInt(4.W).asOutput
+    // val numSlavein = UInt(4.W).asInput
+    // val MasterIDout = UInt(16.W).asOutput
+    // val MasterIDin = UInt(16.W).asInput
+    // val SlaveIDout =  UInt(16.W).asOutput
+    // val SlaveIDin = UInt(16.W).asInput
+    // val selectionout = UInt(16.W).asOutput
+    // val selectionin = UInt(16.W).asInput
   }
 }
