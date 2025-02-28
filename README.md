@@ -28,6 +28,11 @@ conda activate firesim
 After the setup, you can replace all files in /your_path/chipyard/generators/rocket-chip/src/main/scala 
 and /your_path/chipyard/generators/chipyard/src/main/scala with files in /Hardware/Rocket including the source codes of Rocket-core microarchitecture
 and /Hardware/Chipyard including the configuration of Rocket-chip, respectively.
+```bash
+export PLATFORM=$(pwd)
+./update_src.sh
+```
+
 
 ## Software simulation
 ### verilator simulation
