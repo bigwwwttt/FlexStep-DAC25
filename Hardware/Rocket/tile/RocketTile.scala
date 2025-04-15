@@ -1,92 +1,233 @@
-package freechips.rocketchip.util
+// See LICENSE.SiFive for license details.
+// See LICENSE.Berkeley for license details.
 
-import chisel3._
-import chisel3.util._
+package freechips.rocketchip.tile
+
+import Chisel._
+import org.chipsalliance.cde.config._
+import freechips.rocketchip.devices.tilelink._
+import freechips.rocketchip.diplomacy._
+import freechips.rocketchip.interrupts._
+import freechips.rocketchip.tilelink._
 import freechips.rocketchip.rocket._
-import freechips.rocketchip.tile._
-import org.chipsalliance.cde.config.Parameters
+import freechips.rocketchip.subsystem.TileCrossingParamsLike
+import freechips.rocketchip.util._
+import freechips.rocketchip.prci.{ClockSinkParameters}
 
-class LogUnit(implicit p: Parameters) extends CoreModule()(p) 
-    with HasRocketCoreParameters
+case class RocketTileBoundaryBufferParams(force: Boolean = false)
+
+case class RocketTileParams(
+    core: RocketCoreParams = RocketCoreParams(),
+    icache: Option[ICacheParams] = Some(ICacheParams()),
+    dcache: Option[DCacheParams] = Some(DCacheParams()),
+    btb: Option[BTBParams] = Some(BTBParams()),
+    dataScratchpadBytes: Int = 0,
+    name: Option[String] = Some("tile"),
+    hartId: Int = 0,
+    beuAddr: Option[BigInt] = None,
+    blockerCtrlAddr: Option[BigInt] = None,
+    clockSinkParams: ClockSinkParameters = ClockSinkParameters(),
+    boundaryBuffers: Option[RocketTileBoundaryBufferParams] = None
+    ) extends InstantiableTileParams[RocketTile] {
+  require(icache.isDefined)
+  require(dcache.isDefined)
+  def instantiate(crossing: TileCrossingParamsLike, lookup: LookupByHartIdImpl)(implicit p: Parameters): RocketTile = {
+    new RocketTile(this, crossing, lookup)
+  }
+}
+
+class RocketTile private(
+      val rocketParams: RocketTileParams,
+      crossing: ClockCrossingType,
+      lookup: LookupByHartIdImpl,
+      q: Parameters)
+    extends BaseTile(rocketParams, crossing, lookup, q)
+    with SinksExternalInterrupts
+    with SourcesExternalNotifications
+    with HasLazyRoCC  // implies CanHaveSharedFPU with CanHavePTW with HasHellaCache
+    with HasHellaCache
+    with HasICacheFrontend
 {
-    val io = IO(new Bundle {
-        val wb_valid = Input(Bool())
-        val wb_ctrl = Input(new IntCtrlSigs(aluFn))
-        val inst = Input(UInt(32.W))
+  // Private constructor ensures altered LazyModule.p is used implicitly
+  def this(params: RocketTileParams, crossing: TileCrossingParamsLike, lookup: LookupByHartIdImpl)(implicit p: Parameters) =
+    this(params, crossing.crossingType, lookup, p)
 
-        // for addr 
-        val imm = Input(SInt(64.W))
-        val rd0val = Input(UInt(64.W))
-        val wrdata = Input(UInt(64.W))
+  val intOutwardNode = IntIdentityNode()
+  val slaveNode = TLIdentityNode()
+  val masterNode = visibilityNode
 
-        // for data
-        val dmem_resp_data = Input(UInt(64.W))
-        val rd1val = Input(UInt(64.W))
-        val dmem_s2_data = Input(UInt(64.W))
-        val csr_rw_rdata = Input(UInt(64.W))
+  val dtim_adapter = tileParams.dcache.flatMap { d => d.scratch.map { s =>
+    LazyModule(new ScratchpadSlavePort(AddressSet.misaligned(s, d.dataScratchpadBytes), lazyCoreParamsView.coreDataBytes, tileParams.core.useAtomics && !tileParams.core.useAtomicsOnlyForIO))
+  }}
+  dtim_adapter.foreach(lm => connectTLSlave(lm.node, lm.node.portParams.head.beatBytes))
 
-        // // for fprf tag
-        // val dmem_resp_tag = Input(UInt(5.W)) 
+  val bus_error_unit = rocketParams.beuAddr map { a =>
+    val beu = LazyModule(new BusErrorUnit(new L1BusErrors, BusErrorUnitParams(a)))
+    intOutwardNode := beu.intNode
+    connectTLSlave(beu.node, xBytes)
+    beu
+  }
 
-        val fifo_valid = Output(Bool())
-        val fifo_data = Output(UInt(256.W))
+  val tile_master_blocker =
+    tileParams.blockerCtrlAddr
+      .map(BasicBusBlockerParams(_, xBytes, masterPortBeatBytes, deadlock = true))
+      .map(bp => LazyModule(new BasicBusBlocker(bp)))
 
-    })
+  tile_master_blocker.foreach(lm => connectTLSlave(lm.controlNode, xBytes))
 
-    val addr = Wire(UInt(64.W))
-    val data = Wire(UInt(64.W))
-    val more = Wire(UInt(64.W))
-    
-    when(io.wb_ctrl.mem && io.wb_ctrl.mem_cmd.isOneOf(M_XRD, M_XWR)) {
-        addr := io.rd0val + io.imm.asUInt
-    }.elsewhen(io.wb_ctrl.mem && (io.wb_ctrl.mem_cmd.isOneOf(M_XSC, M_XLR) || isAMO(io.wb_ctrl.mem_cmd))) {
-        addr := io.rd0val
-    }.otherwise {
-        addr := 0.U
+  // TODO: this doesn't block other masters, e.g. RoCCs
+  tlOtherMastersNode := tile_master_blocker.map { _.node := tlMasterXbar.node } getOrElse { tlMasterXbar.node }
+  masterNode :=* tlOtherMastersNode
+  DisableMonitors { implicit p => tlSlaveXbar.node :*= slaveNode }
+
+  nDCachePorts += 1 /*core */ + (dtim_adapter.isDefined).toInt
+
+  val dtimProperty = dtim_adapter.map(d => Map(
+    "sifive,dtim" -> d.device.asProperty)).getOrElse(Nil)
+
+  val itimProperty = frontend.icache.itimProperty.toSeq.flatMap(p => Map("sifive,itim" -> p))
+
+  val beuProperty = bus_error_unit.map(d => Map(
+          "sifive,buserror" -> d.device.asProperty)).getOrElse(Nil)
+
+  val cpuDevice: SimpleDevice = new SimpleDevice("cpu", Seq("sifive,rocket0", "riscv")) {
+    override def parent = Some(ResourceAnchors.cpus)
+    override def describe(resources: ResourceBindings): Description = {
+      val Description(name, mapping) = super.describe(resources)
+      Description(name, mapping ++ cpuProperties ++ nextLevelCacheProperty
+                  ++ tileProperties ++ dtimProperty ++ itimProperty ++ beuProperty)
     }
+  }
 
-    when(io.wb_ctrl.mem && (io.wb_ctrl.mem_cmd.isOneOf(M_XRD, M_XLR, M_XSC) || isAMO(io.wb_ctrl.mem_cmd))) {
-        data := io.dmem_resp_data
-    }.elsewhen(io.wb_ctrl.csr =/= CSR.N && io.wb_ctrl.wxd){
-        data := io.csr_rw_rdata
-    }.otherwise {
-        data := 0.U
+  ResourceBinding {
+    Resource(cpuDevice, "reg").bind(ResourceAddress(staticIdForMetadataUseOnly))
+  }
+
+  override lazy val module = new RocketTileModuleImp(this)
+
+  override def makeMasterBoundaryBuffers(crossing: ClockCrossingType)(implicit p: Parameters) = (rocketParams.boundaryBuffers, crossing) match {
+    case (Some(RocketTileBoundaryBufferParams(true )), _)                   => TLBuffer()
+    case (Some(RocketTileBoundaryBufferParams(false)), _: RationalCrossing) => TLBuffer(BufferParams.none, BufferParams.flow, BufferParams.none, BufferParams.flow, BufferParams(1))
+    case _ => TLBuffer(BufferParams.none)
+  }
+
+  override def makeSlaveBoundaryBuffers(crossing: ClockCrossingType)(implicit p: Parameters) = (rocketParams.boundaryBuffers, crossing) match {
+    case (Some(RocketTileBoundaryBufferParams(true )), _)                   => TLBuffer()
+    case (Some(RocketTileBoundaryBufferParams(false)), _: RationalCrossing) => TLBuffer(BufferParams.flow, BufferParams.none, BufferParams.none, BufferParams.none, BufferParams.none)
+    case _ => TLBuffer(BufferParams.none)
+  }
+}
+
+class RocketTileModuleImp(outer: RocketTile) extends BaseTileModuleImp(outer)
+    with HasFpuOpt
+    with HasLazyRoCCModule
+    with HasICacheFrontendModule {
+  Annotated.params(this, outer.rocketParams)
+
+  val core = Module(new Rocket(outer)(outer.p))
+
+  //custom start
+  for(i <- 0 until GlobalParams.Num_Groupcores){
+    outer.customMasterBits_Nodes(i).bundle  := core.io.custom_FIFOout(i).bits
+    outer.customMasterValid_Nodes(i).bundle := core.io.custom_FIFOout(i).valid
+    core.io.custom_FIFOout(i).ready         := outer.customMasterReady_Nodes(i).bundle
+    core.io.score_busy_in(i)                := outer.customMasterbusy_Node(i).bundle
+    core.io.score_umode_in(i)               := outer.customMasterumode_Node(i).bundle
+
+    core.io.custom_FIFOin(i).bits := outer.customSlaveBits_Nodes(i).bundle
+    core.io.custom_FIFOin(i).valid := outer.customSlaveValid_Nodes(i).bundle
+    outer.customSlaveReady_Nodes(i).bundle := core.io.custom_FIFOin(i).ready
+    outer.customSlavebusy_Node(i).bundle := core.io.score_busy_out(i)
+    outer.customSlaveumode_Node(i).bundle := core.io.score_umode_out(i)
+  }    
+
+  
+  /*
+  if(tileParams.hartId == 0 || tileParams.hartId == 4){
+    for(i <- 0 until 3){
+      outer.NumMasteroutNode.get(i).bundle := core.io.numMasterout
+      outer.selectoutNode.get(i).bundle := core.io.selectionout
+      outer.NumSlaveoutNode.get(i).bundle := core.io.numSlaveout
+      outer.MasterIDoutNode.get(i).bundle := core.io.MasterIDout
+      outer.SlaveIDoutNode.get(i).bundle := core.io.SlaveIDout
     }
-
-    when(io.wb_ctrl.mem && (io.wb_ctrl.mem_cmd === M_XWR || io.wb_ctrl.mem_cmd === M_XSC || isAMO(io.wb_ctrl.mem_cmd))) {
-        more := io.dmem_s2_data
-    }.otherwise {
-        more := 0.U
-    }
-
-
-    // valid: when wb_valid and wb_ctrl.mem
-    // for the time being,
-    // we assume that only LR/SC/AMO, integer LD/ST, fp LD_ST set wb_ctrl.mem but in fact there are more.
-
-    // for int and fp LD:       addr(rd0val+imm);   data loaded(dmem_resp_data);      
-    // for LR:                  addr(rd0val);       data loaded(dmem_resp_data);          
-    // for SC:                  addr(rd0val);       data loaded(dmem_resp_data);    more(dmem_s2_data).              
-    // for AMO:                 addr(rd0val);       data loaded(dmem_resp_data);    more(dmem_s2_data).    
     
-    // for int and fp ST:       add(rd0val+imm);                                    more(dmem_s2_data);
-
+  }
+  else{
+    core.io.selectionin := outer.selectinNode.get.bundle
+    core.io.numMasterin := outer.NumMasterinNode.get.bundle
+    core.io.numSlavein := outer.NumSlaveinNode.get.bundle
+    core.io.MasterIDin := outer.MasterIDinNode.get.bundle
+    core.io.SlaveIDin := outer.SlaveIDinNode.get.bundle
     
-    // from the slave's perspective:
-    // scenarios affecting the architectural state:
-    // sigs involved:       rf_wdata:               int ld; lr; sc; amo
-    //                      io.fpu.dmem_resp_data:  fp ld;
+  }
+  */
+  //custom end
 
-    // need to be checked:
-    //                           
+  // Report unrecoverable error conditions; for now the only cause is cache ECC errors
+  outer.reportHalt(List(outer.dcache.module.io.errors))
 
+  // Report when the tile has ceased to retire instructions; for now the only cause is clock gating
+  outer.reportCease(outer.rocketParams.core.clockGate.option(
+    !outer.dcache.module.io.cpu.clock_enabled &&
+    !outer.frontend.module.io.cpu.clock_enabled &&
+    !ptw.io.dpath.clock_enabled &&
+    core.io.cease))
 
-    val fifo_valid = io.wb_valid && (io.wb_ctrl.mem || (io.wb_ctrl.csr =/= CSR.N && io.wb_ctrl.wxd))
-    val fifo_data = Cat("h_dead_beef".U, io.inst, 
-                        addr, 
-                        data,
-                        more)
+  outer.reportWFI(Some(core.io.wfi))
 
-    io.fifo_data := fifo_data
-    io.fifo_valid := fifo_valid
+  outer.decodeCoreInterrupts(core.io.interrupts) // Decode the interrupt vector
+
+  outer.bus_error_unit.foreach { beu =>
+    core.io.interrupts.buserror.get := beu.module.io.interrupt
+    beu.module.io.errors.dcache := outer.dcache.module.io.errors
+    beu.module.io.errors.icache := outer.frontend.module.io.errors
+  }
+
+  core.io.interrupts.nmi.foreach { nmi => nmi := outer.nmiSinkNode.bundle }
+
+  // Pass through various external constants and reports that were bundle-bridged into the tile
+  outer.traceSourceNode.bundle <> core.io.trace
+  core.io.traceStall := outer.traceAuxSinkNode.bundle.stall
+  outer.bpwatchSourceNode.bundle <> core.io.bpwatch
+  core.io.hartid := outer.hartIdSinkNode.bundle
+  require(core.io.hartid.getWidth >= outer.hartIdSinkNode.bundle.getWidth,
+    s"core hartid wire (${core.io.hartid.getWidth}b) truncates external hartid wire (${outer.hartIdSinkNode.bundle.getWidth}b)")
+
+  // Connect the core pipeline to other intra-tile modules
+  outer.frontend.module.io.cpu <> core.io.imem
+  dcachePorts += core.io.dmem // TODO outer.dcachePorts += () => module.core.io.dmem ??
+  fpuOpt foreach { fpu => core.io.fpu <> fpu.io }
+  core.io.ptw <> ptw.io.dpath
+
+  // Connect the coprocessor interfaces
+  if (outer.roccs.size > 0) {
+    cmdRouter.get.io.in <> core.io.rocc.cmd
+    cmdRouter.get.io.score_cdone_input := core.io.rocc.score_rece_done
+    cmdRouter.get.io.mcore_running_input := core.io.rocc.mcore_runing
+    cmdRouter.get.io.score_rrf_input := core.io.rocc.score_recerf
+    cmdRouter.get.io.score_checkmode_in := core.io.rocc.score_checkmode
+    outer.roccs.foreach(_.module.io.exception := core.io.rocc.exception)
+    core.io.rocc.resp <> respArb.get.io.out
+    core.io.rocc.busy <> (cmdRouter.get.io.busy || outer.roccs.map(_.module.io.busy).reduce(_ || _))
+    core.io.rocc.interrupt := outer.roccs.map(_.module.io.interrupt).reduce(_ || _)
+    (core.io.rocc.csrs zip roccCSRIOs.flatten).foreach { t => t._2 := t._1 }
+  }
+
+  // Rocket has higher priority to DTIM than other TileLink clients
+  outer.dtim_adapter.foreach { lm => dcachePorts += lm.module.io.dmem }
+
+  // TODO eliminate this redundancy
+  val h = dcachePorts.size
+  val c = core.dcacheArbPorts
+  val o = outer.nDCachePorts
+  require(h == c, s"port list size was $h, core expected $c")
+  require(h == o, s"port list size was $h, outer counted $o")
+  // TODO figure out how to move the below into their respective mix-ins
+  dcacheArb.io.requestor <> dcachePorts.toSeq
+  ptw.io.requestor <> ptwPorts.toSeq
+}
+
+trait HasFpuOpt { this: RocketTileModuleImp =>
+  val fpuOpt = outer.tileParams.core.fpu.map(params => Module(new FPU(params)(outer.p)))
 }
